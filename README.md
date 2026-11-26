@@ -21,7 +21,3 @@
   <a href="https://github.com/b8mi/Media_Converter"><img src="assets/Media_Converter.svg?v=20261126113500" width="49%" alt="Media Converter"></a>
   <a href="https://github.com/b8mi/MathsTools"><img src="assets/MathsTools.svg?v=20261126113500" width="49%" alt="MathsTools"></a>
 </p>
-
-<p align="center">
-  <img src="assets/activity.svg?v=20261126113500" width="100%" alt="GitHub contribution calendar">
-</p>
