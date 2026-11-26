@@ -660,7 +660,7 @@ def stats(data):
 
 
 def activity(data):
-    parts = [rect(.5, .5, 879, 218, PANEL, f'rx="10" stroke="{EDGE}"'), pixel_text(24, 28, '> ACTIVITY / LAST 365 DAYS', 10, ICE)]
+    parts = [rect(.5, .5, 879, 218, PANEL, f'rx="10" stroke="{EDGE}"'), pixel_text(24, 28, '> ACTIVITY / CONTRIBUTIONS', 10, ICE)]
     if not data.get('days'):
         parts.append(pixel_text(24, 92, 'CONTRIBUTIONS: SYNC PENDING', 12, ICE))
         parts.append(pixel_text(24, 119, 'RUN THE UPDATE WORKFLOW TO LOAD YOUR LIVE CONTRIBUTION HISTORY.', 8.5, MUTED))
@@ -677,10 +677,10 @@ def activity(data):
                     continue
                 level = data.get('levels', {}).get(key, 0)
                 parts.append(rect(24 + week * 16, 43 + day_index * 17, 12, 12, palette[max(0, min(4, level))]))
-        parts.append(pixel_text(24, 184, str(data['total']) + ' CONTRIBUTIONS IN 365 DAYS', 9, ICE))
+        parts.append(pixel_text(24, 184, str(data['total']) + ' TOTAL CONTRIBUTIONS', 9, ICE))
         parts.append(pixel_text(24, 204, 'CURRENT STREAK: ' + str(data['current']) + 'D   /   BEST: ' + str(data['best']) + 'D', 8, MUTED))
         parts.append(pixel_text(855, 184, 'UPDATED ' + data['date'], 7.5, MUTED, 'text-anchor="end"'))
-    write('activity.svg', svg(880, 219, 'Pixel-art GitHub contribution calendar for the last 365 days', ''.join(parts)))
+    write('activity.svg', svg(880, 219, 'Pixel-art GitHub contribution calendar', ''.join(parts)))
 
 
 def update_readme_cache_bust(version):
