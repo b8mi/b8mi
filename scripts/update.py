@@ -22,7 +22,7 @@ PROJECTS = {
     'Media_Converter': ('Offline audio and video conversion using Python and FFmpeg.', 'media'),
     'MathsTools': ('Interactive graphing, geometry, matrices and mathematics tools.', 'math'),
 }
-PANEL = '#101f32'
+PANEL = '#081321'
 EDGE = '#254660'
 ICE = '#9ce8ff'
 BLUE = '#44b9ed'
@@ -162,8 +162,8 @@ def write(name, content):
     (ASSETS / name).write_text(content, encoding='utf-8')
 
 
-def request_json(url, token=None):
-    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-pixel-profile'}
+def request_json(url, token=None, accept='application/vnd.github+json'):
+    headers = {'Accept': accept, 'User-Agent': 'b8mi-pixel-profile'}
     if token:
         headers['Authorization'] = f'Bearer {token}'
         headers['X-GitHub-Api-Version'] = '2022-11-28'
@@ -264,6 +264,34 @@ def streaks(days, today):
     return current, best
 
 
+def request_graphql(query, variables, token):
+    if not token:
+        return None
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'b8mi-pixel-profile',
+        'Authorization': f'Bearer {token}',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
+    req = Request('https://api.github.com/graphql', data=payload, headers=headers, method='POST')
+    try:
+        with urlopen(req, timeout=35) as response:
+            result = json.load(response)
+        if result.get('errors') or not result.get('data', {}).get('user'):
+            return None
+        return result['data']['user']['contributionsCollection']
+    except Exception:
+        return None
+
+
+def search_count(query, token, accept='application/vnd.github+json', endpoint='issues'):
+    url = 'https://api.github.com/search/' + endpoint + '?' + urlencode({'q': query, 'per_page': 1})
+    result = request_json(url, token, accept=accept)
+    return result.get('total_count')
+
+
 def fetch():
     token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     profile = request_json(f'https://api.github.com/users/{USER}', token)
@@ -274,31 +302,82 @@ def fetch():
         repos.extend(batch)
         if len(batch) < 100:
             break
-    by_name = {repo['name']: repo for repo in repos}
-    missing = [name for name in PROJECTS if name not in by_name]
-    if missing:
-        raise RuntimeError('These featured repositories were not returned by GitHub: ' + ', '.join(missing))
+
+    by_name = {repo['name'].casefold(): repo for repo in repos}
+    for name in PROJECTS:
+        if name.casefold() not in by_name:
+            try:
+                by_name[name.casefold()] = request_json(f'https://api.github.com/repos/{USER}/{name}', token)
+            except Exception:
+                pass
+    project_map = {name: by_name.get(name.casefold()) for name in PROJECTS}
+
     now = datetime.now(timezone.utc)
-    first = (now.date() - timedelta(days=364)).isoformat()
+    first_day = now.date() - timedelta(days=364)
+    first = first_day.isoformat()
     last = now.date().isoformat()
-    query = urlencode({'from': first, 'to': last})
-    html = request_text(f'https://github.com/users/{USER}/contributions?{query}')
-    days, levels = parse_contributions(html)
-    current, best = streaks(days, now.date())
-    year_contributions = sum(count for day, count in days.items() if day.startswith(str(now.year) + '-'))
-    featured_stars = sum(by_name[name].get('stargazers_count', 0) for name in PROJECTS)
+    days = {}
+    levels = {}
+    contributions = None
+    commits = None
+    prs = None
+    current = None
+    best = None
+
+    query = "query($login:String!, $from:DateTime!, $to:DateTime!){user(login:$login){contributionsCollection(from:$from,to:$to){totalCommitContributions totalPullRequestContributions contributionCalendar{totalContributions weeks{contributionDays{date contributionCount contributionLevel}}}}}}"
+    graph_data = request_graphql(query, {
+        'login': USER,
+        'from': first_day.isoformat() + 'T00:00:00Z',
+        'to': last + 'T23:59:59Z',
+    }, token)
+
+    if graph_data:
+        calendar = graph_data['contributionCalendar']
+        days = {day['date']: day['contributionCount'] for week in calendar['weeks'] for day in week['contributionDays']}
+        level_map = {'NONE': 0, 'FIRST_QUARTILE': 1, 'SECOND_QUARTILE': 2, 'THIRD_QUARTILE': 3, 'FOURTH_QUARTILE': 4}
+        levels = {day['date']: level_map.get(day['contributionLevel'], 0) for week in calendar['weeks'] for day in week['contributionDays']}
+        contributions = calendar['totalContributions']
+        commits = graph_data.get('totalCommitContributions')
+        prs = graph_data.get('totalPullRequestContributions')
+    else:
+        try:
+            html = request_text(f'https://github.com/users/{USER}/contributions?' + urlencode({'from': first, 'to': last}))
+            days, levels = parse_contributions(html)
+            contributions = sum(days.values())
+        except Exception:
+            days, levels = {}, {}
+
+    if days:
+        current, best = streaks(days, now.date())
+
+    if commits is None:
+        try:
+            commit_query = f'author:{USER} committer-date:{first}..{last}'
+            commits = search_count(commit_query, token, 'application/vnd.github.cloak-preview+json', 'commits')
+        except Exception:
+            commits = None
+    if prs is None:
+        try:
+            pr_query = f'is:pr author:{USER} created:{first}..{last}'
+            prs = search_count(pr_query, token)
+        except Exception:
+            prs = None
+
+    featured_stars = sum((repo or {}).get('stargazers_count', 0) for repo in project_map.values())
     return {
         'name': profile.get('name') or USER,
         'followers': profile.get('followers', 0),
         'repos': profile.get('public_repos', len(repos)),
         'stars': featured_stars,
-        'contributions': year_contributions,
-        'total': sum(days.values()),
+        'commits': commits,
+        'prs': prs,
+        'contributions': contributions,
+        'total': sum(days.values()) if days else None,
         'current': current,
         'best': best,
         'days': days,
         'levels': levels,
-        'projects': by_name,
+        'projects': project_map,
         'date': now.date().isoformat(),
         'year': now.year,
         'synced': now.strftime('%Y-%m-%d %H:%M UTC'),
@@ -308,14 +387,15 @@ def fetch():
 
 def moon(x, y):
     pattern = [
-        '001111100',
-        '011000010',
-        '110000000',
-        '110000000',
-        '110000000',
-        '110000000',
-        '011000010',
-        '001111100',
+        '0011110',
+        '0110000',
+        '1100000',
+        '1100000',
+        '1100000',
+        '1100000',
+        '1100000',
+        '0110000',
+        '0011110',
     ]
     parts = []
     for row, line in enumerate(pattern):
@@ -325,8 +405,85 @@ def moon(x, y):
     return ''.join(parts)
 
 
+def line_points(start, end):
+    x1, y1 = start
+    x2, y2 = end
+    dx = abs(x2 - x1)
+    dy = -abs(y2 - y1)
+    sx = 1 if x1 < x2 else -1
+    sy = 1 if y1 < y2 else -1
+    error = dx + dy
+    points = []
+    while True:
+        points.append((x1, y1))
+        if x1 == x2 and y1 == y2:
+            break
+        twice = 2 * error
+        if twice >= dy:
+            error += dy
+            x1 += sx
+        if twice <= dx:
+            error += dx
+            y1 += sy
+    return points
+
+
+def draw_math_icon(parts):
+    x0, y0, step = 27, 35, 8
+    axis_main = '#55d9ff'
+    axis_shadow = '#1d6d8b'
+    # vertical axis
+    for row in range(9):
+        parts.append(rect(x0 + 1, y0 + row * step, 6, 8, axis_main))
+    # horizontal axis
+    for col in range(9):
+        parts.append(rect(x0 + col * step, y0 + 8 * step + 1, 8, 6, axis_main))
+    # base square point at lower-left
+    for col,row,color in [
+        (1,7,'#5ae6ff'), (2,7,'#4ad3ff'), (1,8,'#58e3ff'), (2,8,'#2d86ff')
+    ]:
+        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, color))
+    # diagonal pixels with per-pixel colors like the reference
+    diagonal = [
+        ((2,7),'#3dc0ff'), ((3,6),'#4fb8ff'), ((4,5),'#6aa8ff'),
+        ((5,4),'#7a96ff'), ((6,3),'#8d7cff'), ((7,2),'#7d65ff'), ((8,1),'#4d71ff')
+    ]
+    for (col,row),color in diagonal:
+        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, color))
+    highlights = [
+        ((2,7),'#89f1ff'), ((3,6),'#9ee9ff'), ((4,5),'#a7d8ff'),
+        ((5,4),'#c8b8ff'), ((6,3),'#d4a5ff'), ((7,2),'#9f8fff'), ((8,1),'#7aa8ff')
+    ]
+    for (col,row),color in highlights:
+        parts.append(rect(x0 + col * step + 2, y0 + row * step + 2, 4, 4, color))
+
+
+def draw_beads_icon(parts):
+    x0, y0, step = 22, 29, 7
+    # pixelated curvy misbaha string, following the shown looped curve
+    rope = [
+        ((3,8),'#29d3f0'), ((2,8),'#2ad4f0'), ((2,9),'#2ad4f0'), ((1,9),'#2dd9f1'), ((1,10),'#2cd4ef'),
+        ((2,10),'#2ad0ec'), ((3,10),'#2ccded'), ((4,10),'#2fd8f0'), ((5,10),'#32def2'), ((6,9),'#31dcf2'),
+        ((7,9),'#2fd7f0'), ((8,8),'#2bd1ee'), ((8,7),'#27c8ea'), ((7,6),'#22bfe6'), ((6,6),'#1eb6e0'),
+        ((5,6),'#25c7ea'), ((4,6),'#2ad7f2'), ((3,5),'#2ddbf3'), ((2,5),'#2fdff4'), ((1,4),'#37d6f0'),
+        ((1,3),'#3bcceb'), ((2,2),'#43c0e7'), ((3,2),'#4db7e6'), ((4,2),'#54c8f5'), ((5,2),'#5ad7ff'),
+        ((6,2),'#64d8ff'), ((7,2),'#74cfff'), ((8,2),'#8cb0ff'), ((9,2),'#8b89ff'), ((10,1),'#736dff'),
+        ((11,1),'#5b62ff'), ((11,2),'#4f68ff'), ((10,3),'#5a79ff'), ((9,4),'#79d6ff'), ((9,5),'#93eaff'),
+        ((8,5),'#5dd9ff'), ((7,5),'#34d8f4'), ((7,4),'#32d6ef'), ((8,3),'#c9d24a')
+    ]
+    for (col,row),color in rope:
+        parts.append(rect(x0 + col * step, y0 + row * step, 7, 7, color))
+    beads = [
+        ((8,3),'#d6d84d'), ((9,2),'#8e85ff'), ((10,1),'#545cff'), ((11,1),'#3f53ff'), ((11,2),'#4c63ff'),
+        ((8,2),'#76beff'), ((7,2),'#68d9ff'), ((5,2),'#6ef2ff')
+    ]
+    for (col,row),color in beads:
+        parts.append(rect(x0 + col * step + 2, y0 + row * step + 2, 3, 3, color))
+
+
 def room(data):
     rng = random.Random(91)
+    fish_rng = random.Random(time.time_ns())
     parts = [rect(0, 0, 220, 112, '#0a1423'), rect(0, 0, 220, 69, '#12263b'), rect(0, 90, 220, 22, '#0a1826')]
     for x in range(0, 220, 11):
         parts.append(rect(x, 0, 1, 90, '#192f45'))
@@ -339,7 +496,13 @@ def room(data):
             continue
         color = rng.choice(['#49718d', '#91d2ef', '#254460'])
         parts.append(rect(sx, sy, 1, 1, color))
-    parts.append(moon(28, 15))
+    parts.append(moon(28, 14))
+    parts.append('<g class="meteor meteor-ltr" shape-rendering="crispEdges">')
+    parts += [rect(-3, 3, 1, 1, '#3b7595'), rect(-2, 2, 1, 1, '#579fc1'), rect(-1, 1, 1, 1, '#91d8f0'), rect(0, 0, 2, 1, '#d8f7ff'), rect(1, -1, 1, 1, '#ffffff')]
+    parts.append('</g>')
+    parts.append('<g class="meteor meteor-rtl" shape-rendering="crispEdges">')
+    parts += [rect(4, 3, 1, 1, '#3b7595'), rect(3, 2, 1, 1, '#579fc1'), rect(2, 1, 1, 1, '#91d8f0'), rect(0, 0, 2, 1, '#d8f7ff'), rect(0, -1, 1, 1, '#ffffff')]
+    parts.append('</g>')
     flicker_css = []
     light_index = 0
     for x in range(8, 212, 9):
@@ -366,42 +529,120 @@ def room(data):
     values = [data.get('repos'), data.get('stars'), data.get('contributions')]
     for index, (label, value) in enumerate(zip(labels, values)):
         parts.append(pixel_text(45, 58 + index * 5, label, 2.55, MUTED))
-        parts.append(pixel_text(107, 58 + index * 5, 'SYNC' if value is None else value, 2.8, ICE, 'text-anchor="end"'))
+        parts.append(pixel_text(107, 58 + index * 5, 'N/A' if value is None else value, 2.8, ICE, 'text-anchor="end"'))
     parts.append(rect(45, 70, 3, 1, ICE, 'class="blink"'))
     parts += [rect(38, 80, 65, 1, '#7590a4'), rect(116, 77, 7, 2, '#5d7c95'), rect(129, 47, 66, 32, '#51738b'), rect(131, 49, 62, 28, '#123c58'), rect(131, 74, 62, 3, '#24465c')]
-    for x in (136, 141, 184, 189):
-        for j in range(5):
-            parts.append(rect(x + (j % 2), 74 - j * 2, 1, 3, '#297a84'))
     parts.append('<g clip-path="url(#tank)">')
-    for index, (x, y, color) in enumerate([(142, 58, '#7feaff'), (166, 66, '#f4bd79'), (178, 55, '#82a9f5')]):
-        parts.append(f'<g class="fish fish{index}" style="animation-delay:-{index * 2.1}s">')
-        parts += [rect(x, y, 6, 3, color), rect(x + 6, y - 1, 3, 5, color), rect(x + 1, y + 1, 1, 1, '#0b203d'), '</g>']
-    for index in range(7):
-        parts.append(rect(137 + index * 8, 70 - (index * 3) % 16, 1, 1, '#9fe7f4', f'class="bubble" style="animation-delay:-{index * .6}s"'))
-    parts += ['</g>', rect(131, 49, 62, 1, '#78c6e2'), rect(131, 49, 1, 28, '#78c6e2'), rect(129, 77, 66, 2, '#5c8095')]
+    plants = [
+        (135, 66, [(0, 3, 1, 4, '#24545b'), (-1, 2, 1, 2, '#1d4b52'), (1, 1, 1, 2, '#285c60'), (2, 3, 1, 2, '#1e5056')]),
+        (141, 67, [(0, 2, 1, 4, '#214e55'), (-1, 1, 1, 2, '#1b454d'), (1, 0, 1, 2, '#285a60')]),
+        (182, 66, [(0, 3, 1, 4, '#24545b'), (-1, 2, 1, 2, '#1d4b52'), (1, 1, 1, 2, '#285c60'), (2, 3, 1, 2, '#1e5056')]),
+        (188, 67, [(0, 2, 1, 4, '#214e55'), (-1, 1, 1, 2, '#1b454d'), (1, 0, 1, 2, '#285a60')]),
+    ]
+    for base_x, base_y, pixels in plants:
+        for dx, dy, width, height, color in pixels:
+            parts.append(rect(base_x + dx, base_y + dy, width, height, color))
+    for column in range(60):
+        if column in (0, 1, 58, 59):
+            height = 4
+        elif column < 8 or column > 51:
+            height = 3
+        else:
+            height = fish_rng.choice([2, 2, 2, 3])
+        if 17 <= column <= 42 and fish_rng.random() < 0.18:
+            height = 3
+        top = 74 - height
+        color = fish_rng.choice(['#667568', '#718071', '#596b68', '#7a806e'])
+        parts.append(rect(132 + column, top, 1, height, color))
+        if column % 4 == 0:
+            parts.append(rect(132 + column, top, 1, 1, '#92917a'))
+
+    fish_colors = ['#7feaff', '#f4bd79', '#82a9f5']
+    fish_starts = [(143, 57), (162, 63), (174, 55)]
+    fish_css = []
+    for index, ((start_x, start_y), color) in enumerate(zip(fish_starts, fish_colors)):
+        route = [(start_x, start_y)]
+        for _ in range(4):
+            previous = route[-1]
+            for attempt in range(40):
+                target_x = max(135, min(180, round(fish_rng.gauss(160, 8.5))))
+                target_y = max(53, min(66, round(fish_rng.gauss(60.5, 3.0))))
+                if abs(target_x - previous[0]) + abs(target_y - previous[1]) >= 8:
+                    break
+            route.append((target_x, target_y))
+        route.append((start_x, start_y))
+        waits = [fish_rng.randint(5, 12) for _ in range(len(route) - 1)]
+        travel = 3
+        total = sum(waits) + travel * len(waits)
+        elapsed = 0
+        motion_frames = [(0, 0, 0)]
+        directions = [(0, 'right' if route[1][0] >= route[0][0] else 'left')]
+        for segment, (current, target) in enumerate(zip(route, route[1:])):
+            elapsed += waits[segment]
+            motion_frames.append((elapsed, current[0] - start_x, current[1] - start_y))
+            elapsed += travel
+            motion_frames.append((elapsed, target[0] - start_x, target[1] - start_y))
+            next_target = route[segment + 2] if segment + 2 < len(route) else route[1]
+            directions.append((elapsed, 'right' if next_target[0] >= target[0] else 'left'))
+        route_name = f'fish-route-{index}'
+        left_name = f'fish-left-{index}'
+        right_name = f'fish-right-{index}'
+        route_rules = []
+        for moment, dx, dy in motion_frames:
+            percent = moment / total * 100
+            route_rules.append(f'{percent:.4f}%{{transform:translate({dx}px,{dy}px)}}')
+        fish_css.append(f'@keyframes {route_name}{{{"".join(route_rules)}}}.fish-{index}{{animation:{route_name} {total}s linear infinite}}')
+        left_rules = []
+        right_rules = []
+        for moment, direction in directions:
+            percent = moment / total * 100
+            left_opacity = 1 if direction == 'left' else 0
+            right_opacity = 1 if direction == 'right' else 0
+            left_rules.append(f'{percent:.4f}%{{opacity:{left_opacity};animation-timing-function:steps(1,end)}}')
+            right_rules.append(f'{percent:.4f}%{{opacity:{right_opacity};animation-timing-function:steps(1,end)}}')
+        fish_css.append(f'@keyframes {left_name}{{{"".join(left_rules)}}}.fish-left-{index}{{animation:{left_name} {total}s steps(1,end) infinite}}')
+        fish_css.append(f'@keyframes {right_name}{{{"".join(right_rules)}}}.fish-right-{index}{{animation:{right_name} {total}s steps(1,end) infinite}}')
+        parts.append(f'<g class="fish fish-{index}">')
+        parts.append(f'<g class="fish-left-{index}" style="opacity:{1 if directions[0][1] == "left" else 0}" shape-rendering="crispEdges">')
+        parts += [rect(start_x + 7, start_y + 1, 2, 3, color), rect(start_x + 3, start_y + 1, 4, 3, color), rect(start_x, start_y, 3, 5, color), rect(start_x + 1, start_y + 1, 1, 1, '#0b203d')]
+        parts.append('</g>')
+        parts.append(f'<g class="fish-right-{index}" style="opacity:{1 if directions[0][1] == "right" else 0}" shape-rendering="crispEdges">')
+        parts += [rect(start_x, start_y + 1, 2, 3, color), rect(start_x + 2, start_y + 1, 4, 3, color), rect(start_x + 6, start_y, 3, 5, color), rect(start_x + 7, start_y + 1, 1, 1, '#0b203d')]
+        parts.append('</g></g>')
+
+    for index, y in enumerate([67, 63, 60, 56, 65, 59, 54]):
+        parts.append(rect(137 + index * 8, y, 1, 1, '#9fe7f4', f'class="bubble" style="animation-delay:-{index * .6}s"'))
+    parts.append('</g>')
+    parts += [rect(131, 49, 62, 1, '#78c6e2'), rect(131, 49, 1, 28, '#78c6e2'), rect(129, 77, 66, 2, '#5c8095')]
     parts += [rect(7, 91, 206, 15, '#081321'), pixel_text(12, 101, '3ZMI / AFTER HOURS', 5, ICE), pixel_text(208, 101, 'CODE // CREATE', 3.5, MUTED, 'text-anchor="end"')]
     definitions = '<defs><clipPath id="window"><rect x="8" y="9" width="204" height="54"/></clipPath><clipPath id="tank"><rect x="132" y="50" width="60" height="24"/></clipPath></defs>'
-    css = '.blink{animation:cursor 1s steps(1) infinite}.fish{animation:fish 8s ease-in-out infinite alternate}.fish1{animation-duration:9.3s}.fish2{animation-duration:7.1s}.bubble{animation:bubble 4s linear infinite}@keyframes cursor{50%{opacity:0}}@keyframes fish{from{transform:translateX(-5px)}to{transform:translateX(8px)}}@keyframes bubble{to{transform:translateY(-20px);opacity:0}}' + ''.join(flicker_css)
+    meteor_css = '@keyframes meteor-ltr{0%{transform:translate(-8px,31px);opacity:1}1.25%{transform:translate(48px,16px);opacity:1}2.5%{transform:translate(105px,10px);opacity:1}3.75%{transform:translate(164px,17px);opacity:1}5%{transform:translate(230px,32px);opacity:1}5.2%{opacity:0}100%{transform:translate(230px,32px);opacity:0}}@keyframes meteor-rtl{0%{transform:translate(230px,32px);opacity:1}1.25%{transform:translate(164px,17px);opacity:1}2.5%{transform:translate(105px,10px);opacity:1}3.75%{transform:translate(48px,16px);opacity:1}5%{transform:translate(-8px,31px);opacity:1}5.2%{opacity:0}100%{transform:translate(-8px,31px);opacity:0}}.meteor{opacity:0}.meteor-ltr{animation:meteor-ltr 60s linear 3s infinite}.meteor-rtl{animation:meteor-rtl 60s linear 33s infinite}'
+    css = '.blink{animation:cursor 1s steps(1) infinite}.bubble{animation:bubble 4s linear infinite}@keyframes cursor{50%{opacity:0}}@keyframes bubble{to{transform:translateY(-20px);opacity:0}}' + meteor_css + ''.join(flicker_css) + ''.join(fish_css)
     body = definitions + '<g transform="scale(4)" shape-rendering="crispEdges">' + ''.join(parts) + '</g>'
-    write('room.svg', svg(880, 448, 'Midnight pixel-art workstation, city skyline and aquarium', body, css))
+    write('room.svg', svg(880, 448, 'Midnight pixel-art workstation, city skyline and aquarium with moving fish and shooting stars', body, css))
 
 
 def card(name, description, icon, repo):
     parts = [rect(.5, .5, 429, 167, PANEL, f'rx="10" stroke="{EDGE}"'), rect(14, 19, 98, 104, '#0b2b45', 'rx="6"'), rect(15, 20, 96, 102, 'none', 'rx="6" stroke="#275472"')]
-    icon_x = 19 if icon == 'pdf' else 27
-    parts.append('<g shape-rendering="crispEdges">')
-    for row, line in enumerate(ICONS[icon]):
-        for col, value in enumerate(line):
-            if value != '0':
-                parts.append(rect(icon_x + col * 8, 35 + row * 8, 8, 8, BLUE if value == '1' else '#205676'))
-    parts.append('</g>')
+    if icon == 'math':
+        draw_math_icon(parts)
+    elif icon == 'beads':
+        draw_beads_icon(parts)
+    else:
+        icon_x = 19 if icon == 'pdf' else 27
+        parts.append('<g shape-rendering="crispEdges">')
+        for row, line in enumerate(ICONS[icon]):
+            for col, value in enumerate(line):
+                if value != '0':
+                    parts.append(rect(icon_x + col * 8, 35 + row * 8, 8, 8, BLUE if value == '1' else '#205676'))
+        parts.append('</g>')
     parts.append(pixel_text(128, 37, name, 13, WHITE))
     for index, line in enumerate(textwrap.wrap(description, width=39)[:4]):
         parts.append(pixel_text(128, 59 + index * 15, line, 8.5, MUTED))
     stars = repo.get('stargazers_count') if repo else None
-    language = (repo.get('language') or 'UNKNOWN') if repo is not None else 'SYNC'
+    language = (repo.get('language') or 'UNKNOWN') if repo is not None else 'N/A'
     parts.append(pixel_text(18, 148, language[:20], 8.5, ICE))
-    parts.append(pixel_text(412, 148, 'STARS: ' + ('SYNC' if stars is None else str(stars)), 8.5, ICE, 'text-anchor="end"'))
+    parts.append(pixel_text(412, 148, 'STARS: ' + ('N/A' if stars is None else str(stars)), 8.5, ICE, 'text-anchor="end"'))
     write(name + '.svg', svg(430, 168, name + ' project card with live repository stars', ''.join(parts)))
 
 
@@ -423,29 +664,29 @@ def projects_heading():
 def stats(data):
     parts = [rect(.5, .5, 879, 129, PANEL, f'rx="10" stroke="{EDGE}"')]
     metrics = [
-        ('contributions', f'CONTRIBUTIONS / {data.get("year", "YEAR")}'),
-        ('stars', 'FEATURED PROJECT STARS'),
-        ('repos', 'PUBLIC REPOSITORIES'),
-        ('followers', 'FOLLOWERS'),
+        ('commits', 'COMMITS / 365D'),
+        ('prs', 'PULL REQUESTS / 365D'),
+        ('stars', 'FEATURED REPO STARS'),
+        ('best', 'BEST STREAK / 365D'),
     ]
     for index, (key, label) in enumerate(metrics):
         x = 24 + index * 220
         value = data.get(key)
-        shown = 'SYNC' if value is None else value
+        shown = 'N/A' if value is None else value
         parts.append(pixel_text(x, 48, shown, 23, ICE))
         parts.append(pixel_text(x, 76, label, 7.5, MUTED))
         if index:
             parts.append(rect(x - 16, 24, 1, 60, EDGE))
-    parts.append(pixel_text(24, 109, 'ACTIVITY WINDOW: LAST 365 DAYS', 8, MUTED))
-    parts.append(pixel_text(855, 109, 'SYNC ' + data.get('synced', 'AWAITING FIRST RUN'), 7.5, MUTED, 'text-anchor="end"'))
+    parts.append(pixel_text(24, 109, f'PUBLIC REPOSITORIES: {data.get("repos", "N/A")} / FOLLOWERS: {data.get("followers", "N/A")}', 8, MUTED))
+    parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'WAITING FOR FIRST RUN'), 7.5, MUTED, 'text-anchor="end"'))
     write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
 
 def activity(data):
     parts = [rect(.5, .5, 879, 218, PANEL, f'rx="10" stroke="{EDGE}"'), pixel_text(24, 28, '> ACTIVITY / LAST 365 DAYS', 10, ICE)]
     if not data.get('days'):
-        parts.append(pixel_text(24, 92, str(data.get('contributions', 'SYNC')) + ' CONTRIBUTIONS IN ' + str(data.get('year', 'YEAR')), 12, ICE))
-        parts.append(pixel_text(24, 119, 'DAILY PIXEL GRID LOADS AFTER THE FIRST WORKFLOW RUN.', 8.5, MUTED))
+        parts.append(pixel_text(24, 92, 'CONTRIBUTION CALENDAR: N/A', 12, ICE))
+        parts.append(pixel_text(24, 119, 'THE PROFILE STATS STILL REFRESH; CALENDAR DATA WILL RETRY NEXT RUN.', 8.5, MUTED))
     else:
         end = date.fromisoformat(data['date'])
         first = end - timedelta(days=364)
@@ -486,10 +727,10 @@ def render(data):
 
 def seed_data():
     project_stars = {
-        'Python-PDF-Toolkits': 24,
+        'Python-PDF-Toolkits': 23,
         'MISBA7ATY': 8,
         'Media_Converter': 23,
-        'MathsTools': 20,
+        'MathsTools': 0,
     }
     projects = {
         name: {'name': name, 'language': 'Python', 'stargazers_count': stars}
@@ -499,7 +740,9 @@ def seed_data():
         'repos': 12,
         'followers': 17,
         'stars': sum(project_stars.values()),
-        'contributions': 273,
+        'commits': None,
+        'prs': None,
+        'contributions': None,
         'total': None,
         'current': None,
         'best': None,
@@ -508,8 +751,8 @@ def seed_data():
         'projects': projects,
         'date': '2026-11-26',
         'year': 2026,
-        'synced': 'LIVE DATA ON FIRST RUN',
-        'cache_version': '20261126000100',
+        'synced': 'AWAITING LIVE SYNC',
+        'cache_version': datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'),
     }
 
 
@@ -520,4 +763,4 @@ if __name__ == '__main__':
     else:
         live = fetch()
         render(live)
-        print(json.dumps({key: live[key] for key in ('repos', 'followers', 'stars', 'contributions', 'total', 'current', 'best', 'synced')}, indent=2))
+        print(json.dumps({key: live[key] for key in ('repos', 'followers', 'stars', 'commits', 'prs', 'contributions', 'total', 'current', 'best', 'synced')}, indent=2))
