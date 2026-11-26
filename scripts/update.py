@@ -3,6 +3,7 @@ from urllib.error import HTTPError, URLError
 from datetime import datetime, timezone, timedelta, date
 from pathlib import Path
 from urllib.request import Request, urlopen
+import re
 from xml.sax.saxutils import escape, quoteattr
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,36 @@ def write(name, content):
     (ASSETS / name).write_text(content, encoding='utf-8')
 
 
+def get_json(url, headers=None, payload=None):
+    req = Request(url, headers=headers or {}, data=json.dumps(payload).encode() if payload is not None else None)
+    for attempt in range(4):
+        try:
+            with urlopen(req, timeout=40) as res:
+                return json.load(res)
+        except HTTPError as exc:
+            if exc.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
+                raise RuntimeError(f'HTTP {exc.code} for {url}') from exc
+        except (URLError, TimeoutError):
+            if attempt == 3:
+                raise
+        time.sleep(2 ** attempt)
+
+
+def get_text(url, headers=None):
+    req = Request(url, headers=headers or {})
+    for attempt in range(4):
+        try:
+            with urlopen(req, timeout=40) as res:
+                return res.read().decode('utf-8', 'replace')
+        except HTTPError as exc:
+            if exc.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
+                raise RuntimeError(f'HTTP {exc.code} for {url}') from exc
+        except (URLError, TimeoutError):
+            if attempt == 3:
+                raise
+        time.sleep(2 ** attempt)
+
+
 def api(path, payload=None):
     token = os.environ.get('GH_TOKEN')
     headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-profile-updater'}
@@ -46,21 +77,10 @@ def api(path, payload=None):
         headers['Authorization'] = f'Bearer {token}'
         headers['X-GitHub-Api-Version'] = '2022-11-28'
     elif payload is not None:
-        raise RuntimeError('GH_TOKEN is required for contribution history.')
+        raise RuntimeError('GH_TOKEN is required for GraphQL requests.')
     if payload is not None:
         headers['Content-Type'] = 'application/json'
-    req = Request('https://api.github.com' + path, headers=headers, data=json.dumps(payload).encode() if payload is not None else None)
-    for attempt in range(4):
-        try:
-            with urlopen(req, timeout=40) as res:
-                return json.load(res)
-        except HTTPError as exc:
-            if exc.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
-                raise RuntimeError(f'GitHub API {path}: HTTP {exc.code}.') from exc
-        except (URLError, TimeoutError):
-            if attempt == 3:
-                raise
-        time.sleep(2 ** attempt)
+    return get_json('https://api.github.com' + path, headers, payload)
 
 
 def streaks(days, today):
@@ -93,23 +113,67 @@ def fetch():
             break
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=364)
-    query = """query($login:String!, $from:DateTime!, $to:DateTime!){user(login:$login){contributionsCollection(from:$from,to:$to){totalCommitContributions totalPullRequestContributions contributionCalendar{totalContributions weeks{contributionDays{date contributionCount}}}}}}"""
-    data = api('/graphql', {'query': query, 'variables': {'login': USER, 'from': start.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(), 'to': now.isoformat()}})
-    if data.get('errors'):
-        raise RuntimeError(str(data['errors']))
-    cc = data['data']['user']['contributionsCollection']
-    calendar = cc['contributionCalendar']
-    days = {d['date']: d['contributionCount'] for w in calendar['weeks'] for d in w['contributionDays']}
-    current, best = streaks(days, now.date())
+    days = {}
+    commits = None
+    prs = None
+    total = None
+    best = current = None
+
+    try:
+        query = """query($login:String!, $from:DateTime!, $to:DateTime!){user(login:$login){contributionsCollection(from:$from,to:$to){totalCommitContributions totalPullRequestContributions contributionCalendar{totalContributions weeks{contributionDays{date contributionCount}}}}}}"""
+        data = api('/graphql', {'query': query, 'variables': {'login': USER, 'from': start.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(), 'to': now.isoformat()}})
+        if data.get('errors'):
+            raise RuntimeError(str(data['errors']))
+        cc = data['data']['user']['contributionsCollection']
+        calendar = cc['contributionCalendar']
+        days = {d['date']: d['contributionCount'] for w in calendar['weeks'] for d in w['contributionDays']}
+        current, best = streaks(days, now.date())
+        commits = cc['totalCommitContributions']
+        prs = cc['totalPullRequestContributions']
+        total = calendar['totalContributions']
+    except Exception:
+        html = get_text(f'https://github.com/users/{USER}/contributions?from={start.date().isoformat()}&to={now.date().isoformat()}', {'User-Agent': 'b8mi-profile-updater'})
+        matches = re.findall(r'data-date="([0-9-]+)"[^>]*data-count="([0-9]+)"', html)
+        days = {d: int(c) for d, c in matches}
+        total = sum(days.values())
+        current, best = streaks(days, now.date())
+        # try public search endpoints for commits and PRs, but gracefully fall back
+        try:
+            h = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-profile-updater'}
+            token = os.environ.get('GH_TOKEN')
+            if token:
+                h['Authorization'] = f'Bearer {token}'
+                h['X-GitHub-Api-Version'] = '2022-11-28'
+            cfrom = start.date().isoformat()
+            cto = now.date().isoformat()
+            commit_q = f'https://api.github.com/search/commits?q=author:{USER}+author-date:{cfrom}..{cto}&per_page=1'
+            commit_headers = dict(h)
+            commit_headers['Accept'] = 'application/vnd.github.cloak-preview+json'
+            commits = get_json(commit_q, commit_headers).get('total_count')
+        except Exception:
+            commits = total
+        try:
+            h = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-profile-updater'}
+            token = os.environ.get('GH_TOKEN')
+            if token:
+                h['Authorization'] = f'Bearer {token}'
+                h['X-GitHub-Api-Version'] = '2022-11-28'
+            cfrom = start.date().isoformat()
+            cto = now.date().isoformat()
+            pr_q = f'https://api.github.com/search/issues?q=type:pr+author:{USER}+created:{cfrom}..{cto}&per_page=1'
+            prs = get_json(pr_q, h).get('total_count')
+        except Exception:
+            prs = 0
+
     by_name = {r['name']: r for r in repos}
     return {
         'name': profile.get('name') or USER,
         'followers': profile.get('followers', 0),
         'repos': profile.get('public_repos', 0),
         'stars': sum(r.get('stargazers_count', 0) for r in repos),
-        'commits': cc['totalCommitContributions'],
-        'prs': cc['totalPullRequestContributions'],
-        'total': calendar['totalContributions'],
+        'commits': commits,
+        'prs': prs,
+        'total': total,
         'best': best,
         'current': current,
         'days': days,
@@ -128,18 +192,15 @@ def room(data):
     for _ in range(75):
         a.append(rect(rng.randrange(9, 212), rng.randrange(10, 42), 1, 1, rng.choice(['#49718d', '#91d2ef', '#254460'])))
     a += [
-        rect(170, 14, 6, 1, '#a7e5f5'),
-        rect(169, 15, 8, 1, '#a7e5f5'),
-        rect(168, 16, 10, 1, '#a7e5f5'),
-        rect(167, 17, 10, 4, '#a7e5f5'),
-        rect(168, 21, 10, 1, '#a7e5f5'),
-        rect(169, 22, 8, 1, '#a7e5f5'),
-        rect(170, 23, 6, 1, '#a7e5f5'),
-        rect(171, 15, 5, 1, '#0b203d'),
-        rect(171, 16, 6, 1, '#0b203d'),
-        rect(172, 17, 5, 4, '#0b203d'),
-        rect(171, 21, 6, 1, '#0b203d'),
-        rect(171, 22, 5, 1, '#0b203d'),
+        rect(172, 14, 3, 1, '#a7e5f5'),
+        rect(171, 15, 2, 1, '#a7e5f5'),
+        rect(170, 16, 2, 1, '#a7e5f5'),
+        rect(169, 17, 2, 2, '#a7e5f5'),
+        rect(168, 19, 2, 3, '#a7e5f5'),
+        rect(169, 22, 2, 2, '#a7e5f5'),
+        rect(170, 24, 2, 1, '#a7e5f5'),
+        rect(171, 25, 2, 1, '#a7e5f5'),
+        rect(172, 26, 3, 1, '#a7e5f5'),
     ]
     for x in range(8, 212, 9):
         h = rng.randrange(8, 30)
@@ -190,7 +251,7 @@ ICONS = {
 
 def card(name, description, icon, repo):
     a = [rect(.5, .5, 429, 167, PANEL, f'rx="10" stroke="{EDGE}"'), rect(14, 19, 98, 104, '#0b2b45', 'rx="6"'), rect(15, 20, 96, 102, 'none', 'rx="6" stroke="#275472"')]
-    icon_x0 = 26 if icon == 'pdf' else 27
+    icon_x0 = 25 if icon == 'pdf' else 27
     a.append('<g class="float" shape-rendering="crispEdges">')
     for y, row in enumerate(ICONS[icon]):
         for x, v in enumerate(row):
