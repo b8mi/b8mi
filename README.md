@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/room.svg?v=20261126113519" width="100%" alt="3zmi's midnight pixel-art workstation and aquarium">
+  <img src="assets/room.svg?v=20261126115225" width="100%" alt="3zm's midnight pixel-art workstation and aquarium">
 </p>
 
 <p align="center">
