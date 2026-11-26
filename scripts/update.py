@@ -431,15 +431,14 @@ def line_points(start, end):
 def draw_math_icon(parts):
     x0, y0, step = 27, 35, 8
     axis = '#6250c8'
-    axis_shadow = '#49399f'
     y_equals_3 = '#4f9fe0'
     y_equals_x = '#76e6ff'
 
-    # Dark-purple coordinate axes.
+    # Solid coordinate axes.
     for row in range(9):
-        parts.append(rect(x0, y0 + row * step, 8, 8, axis_shadow if row == 8 else axis))
+        parts.append(rect(x0, y0 + row * step, 8, 8, axis))
     for col in range(9):
-        parts.append(rect(x0 + col * step, y0 + 8 * step, 8, 8, axis_shadow))
+        parts.append(rect(x0 + col * step, y0 + 8 * step, 8, 8, axis))
 
     # y = 3: a horizontal line across the graph.
     for col in range(1, 9):
@@ -642,10 +641,10 @@ def projects_heading():
 def stats(data):
     parts = [rect(.5, .5, 879, 129, PANEL, f'rx="10" stroke="{EDGE}"')]
     metrics = [
-        ('commits', 'COMMITS / 365D'),
-        ('prs', 'PULL REQUESTS / 365D'),
+        ('repos', 'PUBLIC REPOSITORIES'),
+        ('followers', 'FOLLOWERS'),
         ('stars', 'FEATURED REPO STARS'),
-        ('best', 'BEST STREAK / 365D'),
+        ('contributions', 'CONTRIBUTIONS / YEAR'),
     ]
     for index, (key, label) in enumerate(metrics):
         x = 24 + index * 220
@@ -655,7 +654,7 @@ def stats(data):
         parts.append(pixel_text(x, 76, label, 7.5, MUTED))
         if index:
             parts.append(rect(x - 16, 24, 1, 60, EDGE))
-    parts.append(pixel_text(24, 109, f'PUBLIC REPOSITORIES: {data.get("repos") if data.get("repos") is not None else "--"} / FOLLOWERS: {data.get("followers") if data.get("followers") is not None else "--"}', 8, MUTED))
+    parts.append(pixel_text(24, 109, f'FEATURED PROJECTS: {len(PROJECTS)} / PROFILE: {USER.upper()}', 8, MUTED))
     parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'READY'), 7.5, MUTED, 'text-anchor="end"'))
     write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
@@ -704,16 +703,18 @@ def render(data):
 
 def seed_data():
     projects = {
-        name: {'name': name, 'language': 'Python', 'stargazers_count': None}
-        for name in PROJECTS
+        'Python-PDF-Toolkits': {'name': 'Python-PDF-Toolkits', 'language': 'Python', 'stargazers_count': 24},
+        'MISBA7ATY': {'name': 'MISBA7ATY', 'language': 'Python', 'stargazers_count': 8},
+        'Media_Converter': {'name': 'Media_Converter', 'language': 'Python', 'stargazers_count': 23},
+        'MathsTools': {'name': 'MathsTools', 'language': 'Python', 'stargazers_count': 20},
     }
     return {
-        'repos': None,
-        'followers': None,
-        'stars': None,
+        'repos': 12,
+        'followers': 17,
+        'stars': 75,
         'commits': None,
         'prs': None,
-        'contributions': None,
+        'contributions': 273,
         'total': None,
         'current': None,
         'best': None,
@@ -722,7 +723,7 @@ def seed_data():
         'projects': projects,
         'date': '2026-11-26',
         'year': 2026,
-        'synced': 'AWAITING LIVE SYNC',
+        'synced': 'PROFILE SNAPSHOT',
         'cache_version': datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'),
     }
 
