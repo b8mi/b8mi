@@ -16,11 +16,11 @@ from xml.sax.saxutils import quoteattr
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'assets'
 USER = os.environ.get('PROFILE_USER', 'b8mi')
-PROJECTS = {
-    'Python-PDF-Toolkits': ('Five offline PDF utilities for merging, cropping, compression and conversion.', 'pdf'),
-    'MISBA7ATY': ('A lightweight Arabic dhikr counter with progress tracking.', 'beads'),
-    'Media_Converter': ('Offline audio and video conversion using Python and FFmpeg.', 'media'),
-    'MathsTools': ('Interactive graphing, geometry, matrices and mathematics tools.', 'math'),
+CUSTOM_PROJECT_STYLES = {
+    'python-pdf-toolkits': ('Five offline PDF utilities for merging, cropping, compression and conversion.', 'pdf'),
+    'misba7aty': ('A lightweight Arabic dhikr counter with progress tracking.', 'beads'),
+    'media_converter': ('Offline audio and video conversion using Python and FFmpeg.', 'media'),
+    'mathstools': ('Interactive graphing, geometry, matrices and mathematics tools.', 'math'),
 }
 PANEL = '#081321'
 EDGE = '#254660'
@@ -286,6 +286,69 @@ def request_graphql(query, variables, token):
         return None
 
 
+
+def request_graphql_user(query, variables, token):
+    if not token:
+        return None
+    headers = {
+        'Accept': 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'b8mi-pixel-profile',
+        'Authorization': f'Bearer {token}',
+        'X-GitHub-Api-Version': '2022-11-28',
+    }
+    payload = json.dumps({'query': query, 'variables': variables}).encode('utf-8')
+    req = Request('https://api.github.com/graphql', data=payload, headers=headers, method='POST')
+    try:
+        with urlopen(req, timeout=35) as response:
+            result = json.load(response)
+        if result.get('errors'):
+            return None
+        return result.get('data', {}).get('user')
+    except Exception:
+        return None
+
+
+def normalize_repo(repo):
+    if not repo:
+        return None
+    lang = repo.get('language')
+    if isinstance(lang, dict):
+        lang = (lang.get('name') or 'Python')
+    desc = repo.get('description') or 'Pinned repository.'
+    return {
+        'name': repo.get('name'),
+        'description': desc,
+        'language': lang or 'Python',
+        'stargazers_count': repo.get('stargazers_count', repo.get('stargazerCount', 0)) or 0,
+        'html_url': repo.get('html_url') or repo.get('url') or f'https://github.com/{USER}/{repo.get("name")}',
+    }
+
+
+def choose_icon(repo):
+    name = (repo.get('name') or '').casefold()
+    if name in CUSTOM_PROJECT_STYLES:
+        return CUSTOM_PROJECT_STYLES[name][1]
+    text = ' '.join([(repo.get('name') or ''), (repo.get('description') or ''), (repo.get('language') or '')]).casefold()
+    if any(k in text for k in ['pdf', 'document', 'merge', 'crop', 'compress']):
+        return 'pdf'
+    if any(k in text for k in ['math', 'graph', 'matrix', 'geometry', 'calc']):
+        return 'math'
+    if any(k in text for k in ['misba', 'tasb', 'dhikr', 'bead', 'zikr']):
+        return 'beads'
+    return 'media'
+
+
+def resolve_featured(repo):
+    repo = normalize_repo(repo)
+    if not repo:
+        return None
+    style = CUSTOM_PROJECT_STYLES.get((repo.get('name') or '').casefold())
+    if style and (not repo.get('description') or repo.get('description') == 'Pinned repository.'):
+        repo['description'] = style[0]
+    repo['icon'] = choose_icon(repo)
+    return repo
+
 def search_count(query, token, accept='application/vnd.github+json', endpoint='issues'):
     url = 'https://api.github.com/search/' + endpoint + '?' + urlencode({'q': query, 'per_page': 1})
     result = request_json(url, token, accept=accept)
@@ -308,13 +371,22 @@ def fetch():
         page += 1
 
     by_name = {repo['name'].casefold(): repo for repo in repos}
-    for name in PROJECTS:
-        if name.casefold() not in by_name:
-            try:
-                by_name[name.casefold()] = request_json(f'https://api.github.com/repos/{USER}/{name}', token)
-            except Exception:
-                pass
-    project_map = {name: by_name.get(name.casefold()) for name in PROJECTS}
+
+    pinned = []
+    pinned_query = "query($login:String!){user(login:$login){pinnedItems(first:6, types:REPOSITORY){nodes{... on Repository{name description stargazerCount url primaryLanguage{name}}}}}}"
+    user_data = request_graphql_user(pinned_query, {'login': USER}, token)
+    if user_data and user_data.get('pinnedItems'):
+        for node in user_data['pinnedItems'].get('nodes', []):
+            repo = resolve_featured(node)
+            if repo:
+                pinned.append(repo)
+    if not pinned:
+        # fallback to the old preferred repos if GraphQL is unavailable
+        fallback_names = ['Python-PDF-Toolkits', 'MISBA7ATY', 'Media_Converter', 'MathsTools']
+        for name in fallback_names:
+            repo = by_name.get(name.casefold())
+            if repo:
+                pinned.append(resolve_featured(repo))
 
     now = datetime.now(timezone.utc)
     first_day = now.date() - timedelta(days=364)
@@ -370,7 +442,6 @@ def fetch():
     total_stars = sum(repo['stargazers_count'] for repo in repos)
     return {
         'name': profile.get('name') or USER,
-        'followers': profile.get('followers', 0),
         'repos': profile.get('public_repos', len(repos)),
         'stars': total_stars,
         'commits': commits,
@@ -381,7 +452,8 @@ def fetch():
         'best': best,
         'days': days,
         'levels': levels,
-        'projects': project_map,
+        'featured': pinned,
+        'pinned_count': len(pinned),
         'date': now.date().isoformat(),
         'year': now.year,
         'synced': now.strftime('%Y-%m-%d %H:%M UTC'),
@@ -508,7 +580,7 @@ def room(data):
     for y in range(94, 112, 6):
         parts.append(rect(0, y, 220, 1, '#192c40'))
     parts += [rect(19, 79, 182, 4, '#35516a'), rect(19, 83, 182, 2, '#183146'), rect(24, 85, 4, 16, '#243c51'), rect(193, 85, 4, 16, '#243c51'), rect(40, 45, 72, 31, '#385871'), rect(42, 47, 68, 27, '#06121f'), rect(72, 76, 8, 3, '#385871'), rect(65, 78, 22, 1, '#56788c')]
-    parts.append(pixel_text(45, 52, '> B8MI / TERMINAL', 3.1, ICE))
+    parts.append(pixel_text(45, 52, '/ TERMINAL', 3.1, ICE))
     labels = ['> REPOSITORIES', '> TOTAL REPO STARS', f'> CONTRIBUTIONS / {data.get("year", "YEAR")}']
     values = [data.get('repos'), data.get('stars'), data.get('contributions')]
     for index, (label, value) in enumerate(zip(labels, values)):
@@ -607,7 +679,10 @@ def room(data):
     write('room.svg', svg(880, 448, 'Midnight pixel-art workstation, city skyline and aquarium with moving fish and shooting stars', body, css))
 
 
-def card(name, description, icon, repo):
+def card(slot_name, repo):
+    name = repo.get('name') or 'REPOSITORY'
+    description = repo.get('description') or 'Pinned repository.'
+    icon = repo.get('icon') or choose_icon(repo)
     parts = [rect(.5, .5, 429, 167, PANEL, f'rx="10" stroke="{EDGE}"'), rect(14, 19, 98, 104, '#0b2b45', 'rx="6"'), rect(15, 20, 96, 102, 'none', 'rx="6" stroke="#275472"')]
     if icon == 'math':
         draw_math_icon(parts)
@@ -624,11 +699,11 @@ def card(name, description, icon, repo):
     parts.append(pixel_text(128, 37, name, 13, WHITE))
     for index, line in enumerate(textwrap.wrap(description, width=39)[:4]):
         parts.append(pixel_text(128, 59 + index * 15, line, 8.5, MUTED))
-    stars = repo.get('stargazers_count') if repo else None
-    language = (repo.get('language') or 'PYTHON') if repo is not None else 'PYTHON'
-    parts.append(pixel_text(18, 148, language[:20], 8.5, ICE))
+    stars = repo.get('stargazers_count')
+    language = (repo.get('language') or 'PYTHON')
+    parts.append(pixel_text(18, 148, str(language)[:20], 8.5, ICE))
     parts.append(pixel_text(412, 148, 'STARS: ' + ('--' if stars is None else str(stars)), 8.5, ICE, 'text-anchor="end"'))
-    write(name + '.svg', svg(430, 168, name + ' project card with live repository stars', ''.join(parts)))
+    write(slot_name + '.svg', svg(430, 168, name + ' project card with live repository stars', ''.join(parts)))
 
 
 def intro():
@@ -675,7 +750,7 @@ def stats(data):
     parts.append(pixel_star(300, 60, '#6ccfff', 1))
     parts.append(pixel_star(540, 64, '#3d6d8f', 2))
 
-    parts.append(pixel_text(24, 109, f'SHOWING {len(PROJECTS)} FEATURED PROJECTS OUT OF {data.get("repos", "--")}', 8, MUTED))
+    parts.append(pixel_text(24, 109, 'EXAMPLES OF WHAT I DO', 8, MUTED))
     parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'READY'), 7.5, MUTED, 'text-anchor="end"'))
     write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
@@ -687,27 +762,54 @@ def update_readme_cache_bust(version):
     readme.write_text(source, encoding='utf-8')
 
 
+def write_readme(data):
+    version = data.get('cache_version', datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'))
+    featured = data.get('featured', [])[:4]
+    lines = [
+        '<p align="center">',
+        f"  <img src=\"assets/room.svg?v={version}\" width=\"100%\" alt=\"3zm's midnight pixel-art workstation and aquarium\">",
+        '</p>', '',
+        '<p align="center">',
+        f'  <img src="assets/intro.svg?v={version}" width="100%" alt="I build software, games and tools that make things a little easier">',
+        '</p>', '',
+        '<p align="center">',
+        f'  <img src="assets/stats.svg?v={version}" width="100%" alt="Live GitHub statistics">',
+        '</p>', '',
+        '<p align="center">',
+        f'  <img src="assets/projects-heading.svg?v={version}" width="100%" alt="Featured Projects">',
+        '</p>', '',
+        '<p align="center">',
+    ]
+    for idx, repo in enumerate(featured, start=1):
+        href = repo.get('html_url') or f'https://github.com/{USER}/{repo.get("name")}'
+        alt = repo.get('name') or f'Pinned repository {idx}'
+        lines.append(f'  <a href="{href}"><img src="assets/featured-{idx}.svg?v={version}" width="49%" alt="{alt}"></a>')
+    lines += ['</p>', '', '<p align="center">', f'  <a href="https://github.com/{USER}?tab=repositories">View all repositories</a>', '</p>', '']
+    (ROOT / 'README.md').write_text('\n'.join(lines), encoding='utf-8')
+
+
 def render(data):
     room(data)
     intro()
     projects_heading()
     stats(data)
-    for name, (description, icon) in PROJECTS.items():
-        card(name, description, icon, data.get('projects', {}).get(name))
-    update_readme_cache_bust(data.get('cache_version', datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')))
+    featured = data.get('featured', [])[:4]
+    for idx, repo in enumerate(featured, start=1):
+        card(f'featured-{idx}', repo)
+    write_readme(data)
 
 
 def seed_data():
-    projects = {
-        'Python-PDF-Toolkits': {'name': 'Python-PDF-Toolkits', 'language': 'Python', 'stargazers_count': 24},
-        'MISBA7ATY': {'name': 'MISBA7ATY', 'language': 'Python', 'stargazers_count': 8},
-        'Media_Converter': {'name': 'Media_Converter', 'language': 'Python', 'stargazers_count': 23},
-        'MathsTools': {'name': 'MathsTools', 'language': 'Python', 'stargazers_count': 20},
-    }
+    featured = [
+        {'name': 'Python-PDF-Toolkits', 'description': 'Five offline PDF utilities for merging, cropping, compression and conversion.', 'language': 'Python', 'stargazers_count': 24, 'html_url': 'https://github.com/b8mi/Python-PDF-Toolkits', 'icon': 'pdf'},
+        {'name': 'MISBA7ATY', 'description': 'A lightweight Arabic dhikr counter with progress tracking.', 'language': 'Python', 'stargazers_count': 8, 'html_url': 'https://github.com/b8mi/MISBA7ATY', 'icon': 'beads'},
+        {'name': 'Media_Converter', 'description': 'Offline audio and video conversion using Python and FFmpeg.', 'language': 'Python', 'stargazers_count': 23, 'html_url': 'https://github.com/b8mi/Media_Converter', 'icon': 'media'},
+        {'name': 'MathsTools', 'description': 'Interactive graphing, geometry, matrices and mathematics tools.', 'language': 'Python', 'stargazers_count': 20, 'html_url': 'https://github.com/b8mi/MathsTools', 'icon': 'math'},
+    ]
     return {
+        'name': USER,
         'repos': 12,
-        'followers': 17,
-        'stars': '90+',
+        'stars': 90,
         'commits': None,
         'prs': None,
         'contributions': 273,
@@ -716,10 +818,11 @@ def seed_data():
         'best': None,
         'days': {},
         'levels': {},
-        'projects': projects,
+        'featured': featured,
+        'pinned_count': len(featured),
         'date': '2026-11-26',
         'year': 2026,
-        'synced': 'PARTIAL SNAPSHOT',
+        'synced': 'PROFILE SNAPSHOT',
         'cache_version': datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'),
     }
 

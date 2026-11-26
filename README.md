@@ -1,25 +1,24 @@
 <p align="center">
-  <img src="assets/room.svg?v=20261126133906" width="100%" alt="3zm's midnight pixel-art workstation and aquarium">
+  <img src="assets/room.svg?v=f8e90330de35" width="100%" alt="3zm's midnight pixel-art workstation and aquarium">
 </p>
 
 <p align="center">
-  <img src="assets/intro.svg?v=20261126133906" width="100%" alt="I build software, games and tools that make things a little easier">
-</p>
-
-
-<p align="center">
-  <img src="assets/stats.svg?v=20261126133906" width="100%" alt="Live GitHub statistics">
+  <img src="assets/intro.svg?v=20261126134540" width="100%" alt="I build software, games and tools that make things a little easier">
 </p>
 
 <p align="center">
-  <img src="assets/projects-heading.svg?v=20261126133906" width="100%" alt="Featured Projects">
+  <img src="assets/stats.svg?v=6ac551e4b4d5" width="100%" alt="Live GitHub statistics">
 </p>
 
 <p align="center">
-  <a href="https://github.com/b8mi/Python-PDF-Toolkits"><img src="assets/Python-PDF-Toolkits.svg?v=20261126133906" width="49%" alt="Python PDF Toolkits"></a>
-  <a href="https://github.com/b8mi/MISBA7ATY"><img src="assets/MISBA7ATY.svg?v=20261126133906" width="49%" alt="MISBA7ATY"></a>
-  <a href="https://github.com/b8mi/Media_Converter"><img src="assets/Media_Converter.svg?v=20261126133906" width="49%" alt="Media Converter"></a>
-  <a href="https://github.com/b8mi/MathsTools"><img src="assets/MathsTools.svg?v=20261126133906" width="49%" alt="MathsTools"></a>
+  <img src="assets/projects-heading.svg?v=20261126134540" width="100%" alt="Featured Projects">
+</p>
+
+<p align="center">
+  <a href="https://github.com/b8mi/Python-PDF-Toolkits"><img src="assets/featured-1.svg?v=20261126134540" width="49%" alt="Python-PDF-Toolkits"></a>
+  <a href="https://github.com/b8mi/MISBA7ATY"><img src="assets/featured-2.svg?v=20261126134540" width="49%" alt="MISBA7ATY"></a>
+  <a href="https://github.com/b8mi/Media_Converter"><img src="assets/featured-3.svg?v=20261126134540" width="49%" alt="Media_Converter"></a>
+  <a href="https://github.com/b8mi/MathsTools"><img src="assets/featured-4.svg?v=20261126134540" width="49%" alt="MathsTools"></a>
 </p>
 
 <p align="center">
