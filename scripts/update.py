@@ -1,19 +1,26 @@
-import os, json, random, textwrap, time
-from urllib.error import HTTPError, URLError
-from datetime import datetime, timezone, timedelta, date
-from pathlib import Path
-from urllib.request import Request, urlopen
+import json
+import os
+import random
 import re
-from xml.sax.saxutils import escape, quoteattr
+import textwrap
+import time
+from datetime import date, datetime, timedelta, timezone
+from html import unescape
+from html.parser import HTMLParser
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+from xml.sax.saxutils import quoteattr
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'assets'
 USER = os.environ.get('PROFILE_USER', 'b8mi')
 PROJECTS = {
     'Python-PDF-Toolkits': ('Five offline PDF utilities for merging, cropping, compression and conversion.', 'pdf'),
-    'MISBA7ATY': ('مسبحة إلكترونية | A lightweight Arabic dhikr counter with progress tracking.', 'beads'),
+    'MISBA7ATY': ('A lightweight Arabic dhikr counter with progress tracking.', 'beads'),
     'Media_Converter': ('Offline audio and video conversion using Python and FFmpeg.', 'media'),
-    'MathsTools': ('Interactive graphing, geometry, matrices and other mathematics tools.', 'math'),
+    'MathsTools': ('Interactive graphing, geometry, matrices and mathematics tools.', 'math'),
 }
 PANEL = '#101f32'
 EDGE = '#254660'
@@ -21,18 +28,133 @@ ICE = '#9ce8ff'
 BLUE = '#44b9ed'
 MUTED = '#9aafc5'
 WHITE = '#e2f4ff'
+DARK = '#081321'
+
+FONT = {
+    'A': ('01110', '10001', '10001', '11111', '10001', '10001', '10001'),
+    'B': ('11110', '10001', '10001', '11110', '10001', '10001', '11110'),
+    'C': ('01111', '10000', '10000', '10000', '10000', '10000', '01111'),
+    'D': ('11110', '10001', '10001', '10001', '10001', '10001', '11110'),
+    'E': ('11111', '10000', '10000', '11110', '10000', '10000', '11111'),
+    'F': ('11111', '10000', '10000', '11110', '10000', '10000', '10000'),
+    'G': ('01111', '10000', '10000', '10111', '10001', '10001', '01111'),
+    'H': ('10001', '10001', '10001', '11111', '10001', '10001', '10001'),
+    'I': ('111', '010', '010', '010', '010', '010', '111'),
+    'J': ('00111', '00010', '00010', '00010', '10010', '10010', '01100'),
+    'K': ('10001', '10010', '10100', '11000', '10100', '10010', '10001'),
+    'L': ('10000', '10000', '10000', '10000', '10000', '10000', '11111'),
+    'M': ('10001', '11011', '10101', '10101', '10001', '10001', '10001'),
+    'N': ('10001', '11001', '10101', '10011', '10001', '10001', '10001'),
+    'O': ('01110', '10001', '10001', '10001', '10001', '10001', '01110'),
+    'P': ('11110', '10001', '10001', '11110', '10000', '10000', '10000'),
+    'Q': ('01110', '10001', '10001', '10001', '10101', '10010', '01101'),
+    'R': ('11110', '10001', '10001', '11110', '10100', '10010', '10001'),
+    'S': ('01111', '10000', '10000', '01110', '00001', '00001', '11110'),
+    'T': ('11111', '00100', '00100', '00100', '00100', '00100', '00100'),
+    'U': ('10001', '10001', '10001', '10001', '10001', '10001', '01110'),
+    'V': ('10001', '10001', '10001', '10001', '10001', '01010', '00100'),
+    'W': ('10001', '10001', '10001', '10101', '10101', '10101', '01010'),
+    'X': ('10001', '10001', '01010', '00100', '01010', '10001', '10001'),
+    'Y': ('10001', '10001', '01010', '00100', '00100', '00100', '00100'),
+    'Z': ('11111', '00001', '00010', '00100', '01000', '10000', '11111'),
+    '0': ('01110', '10001', '10011', '10101', '11001', '10001', '01110'),
+    '1': ('00100', '01100', '00100', '00100', '00100', '00100', '01110'),
+    '2': ('01110', '10001', '00001', '00010', '00100', '01000', '11111'),
+    '3': ('11110', '00001', '00001', '01110', '00001', '00001', '11110'),
+    '4': ('00010', '00110', '01010', '10010', '11111', '00010', '00010'),
+    '5': ('11111', '10000', '10000', '11110', '00001', '00001', '11110'),
+    '6': ('01110', '10000', '10000', '11110', '10001', '10001', '01110'),
+    '7': ('11111', '00001', '00010', '00100', '01000', '01000', '01000'),
+    '8': ('01110', '10001', '10001', '01110', '10001', '10001', '01110'),
+    '9': ('01110', '10001', '10001', '01111', '00001', '00001', '01110'),
+    '/': ('00001', '00010', '00010', '00100', '01000', '01000', '10000'),
+    ':': ('000', '010', '010', '000', '010', '010', '000'),
+    '.': ('000', '000', '000', '000', '000', '011', '011'),
+    ',': ('000', '000', '000', '000', '011', '011', '010'),
+    '-': ('00000', '00000', '00000', '11111', '00000', '00000', '00000'),
+    '+': ('00000', '00100', '00100', '11111', '00100', '00100', '00000'),
+    '>': ('10000', '01000', '00100', '00010', '00100', '01000', '10000'),
+    '<': ('00001', '00010', '00100', '01000', '00100', '00010', '00001'),
+    '!': ('010', '010', '010', '010', '010', '000', '010'),
+    '?': ('01110', '10001', '00001', '00010', '00100', '00000', '00100'),
+    '|': ('010', '010', '010', '010', '010', '010', '010'),
+    '_': ('00000', '00000', '00000', '00000', '00000', '00000', '11111'),
+    '(': ('001', '010', '100', '100', '100', '010', '001'),
+    ')': ('100', '010', '001', '001', '001', '010', '100'),
+    "'": ('010', '010', '001', '000', '000', '000', '000'),
+    ' ': ('000', '000', '000', '000', '000', '000', '000'),
+}
+
+ICONS = {
+    'pdf': ['001111100', '001222100', '001222110', '001222221', '001212221', '001222221', '001211121', '001222221', '001111111'],
+    'beads': ['000111000', '001000100', '010000010', '100000001', '100000001', '100000001', '010000010', '001010100', '000111000'],
+    'media': ['111111111', '122222221', '120222221', '120022221', '120002221', '120022221', '120222221', '122222221', '111111111'],
+    'math': ['100000001', '100000010', '100000100', '100001000', '111111111', '100100000', '101000000', '110000000', '111111111'],
+}
 
 
-def rect(x, y, w, h, c, extra=''):
-    return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}" {extra}/>'
+class ContributionParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.cells = []
+        self.tooltips = {}
+        self.active_tooltip = None
+        self.tooltip_text = []
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag.lower() == 'td' and values.get('data-date'):
+            self.cells.append({
+                'date': values.get('data-date'),
+                'level': int(values.get('data-level', '0') or 0),
+                'id': values.get('id'),
+                'aria': values.get('aria-label', ''),
+                'count': values.get('data-count'),
+            })
+        if tag.lower() == 'tool-tip' and values.get('for'):
+            self.active_tooltip = values['for']
+            self.tooltip_text = []
+
+    def handle_data(self, data):
+        if self.active_tooltip is not None:
+            self.tooltip_text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag.lower() == 'tool-tip' and self.active_tooltip is not None:
+            self.tooltips[self.active_tooltip] = ' '.join(self.tooltip_text)
+            self.active_tooltip = None
+            self.tooltip_text = []
 
 
-def text(x, y, s, size=14, c=WHITE, extra=''):
-    return f'<text x="{x}" y="{y}" font-family="monospace" font-size="{size}" fill="{c}" {extra}>{escape(str(s))}</text>'
+def rect(x, y, w, h, color, extra=''):
+    return f'<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{color}" {extra}/>'
 
 
-def svg(w, h, label, body, css=''):
-    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" role="img" aria-label={quoteattr(label)}><style>{css}@media(prefers-reduced-motion:reduce){{*{{animation:none!important}}}}</style>{body}</svg>\n'
+def pixel_text(x, y, value, size=10, color=WHITE, extra=''):
+    value = str(value).upper()
+    scale = size / 7
+    advance = 6 * scale
+    width = max(0, len(value) * advance - scale)
+    if 'text-anchor="end"' in extra:
+        x -= width
+    elif 'text-anchor="middle"' in extra:
+        x -= width / 2
+    top = y - 7 * scale
+    path = []
+    for index, char in enumerate(value):
+        glyph = FONT.get(char, FONT[' '])
+        for row, pattern in enumerate(glyph):
+            for col, bit in enumerate(pattern):
+                if bit == '1':
+                    px = round(x + index * advance + col * scale, 3)
+                    py = round(top + row * scale, 3)
+                    sw = round(scale, 3)
+                    path.append(f'M{px} {py}h{sw}v{sw}h-{sw}z')
+    return f'<path d="{"".join(path)}" fill="{color}" shape-rendering="crispEdges"/>'
+
+
+def svg(width, height, label, body, css=''):
+    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label={quoteattr(label)}><style>{css}@media(prefers-reduced-motion:reduce){{*{{animation:none!important}}}}</style>{body}</svg>\n'
 
 
 def write(name, content):
@@ -40,51 +162,90 @@ def write(name, content):
     (ASSETS / name).write_text(content, encoding='utf-8')
 
 
-def get_json(url, headers=None, payload=None):
-    req = Request(url, headers=headers or {}, data=json.dumps(payload).encode() if payload is not None else None)
-    for attempt in range(4):
-        try:
-            with urlopen(req, timeout=40) as res:
-                return json.load(res)
-        except HTTPError as exc:
-            if exc.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
-                raise RuntimeError(f'HTTP {exc.code} for {url}') from exc
-        except (URLError, TimeoutError):
-            if attempt == 3:
-                raise
-        time.sleep(2 ** attempt)
-
-
-def get_text(url, headers=None):
-    req = Request(url, headers=headers or {})
-    for attempt in range(4):
-        try:
-            with urlopen(req, timeout=40) as res:
-                return res.read().decode('utf-8', 'replace')
-        except HTTPError as exc:
-            if exc.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
-                raise RuntimeError(f'HTTP {exc.code} for {url}') from exc
-        except (URLError, TimeoutError):
-            if attempt == 3:
-                raise
-        time.sleep(2 ** attempt)
-
-
-def api(path, payload=None):
-    token = os.environ.get('GH_TOKEN')
-    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-profile-updater'}
+def request_json(url, token=None):
+    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-pixel-profile'}
     if token:
         headers['Authorization'] = f'Bearer {token}'
         headers['X-GitHub-Api-Version'] = '2022-11-28'
-    elif payload is not None:
-        raise RuntimeError('GH_TOKEN is required for GraphQL requests.')
-    if payload is not None:
-        headers['Content-Type'] = 'application/json'
-    return get_json('https://api.github.com' + path, headers, payload)
+    req = Request(url, headers=headers)
+    for attempt in range(4):
+        try:
+            with urlopen(req, timeout=35) as response:
+                return json.load(response)
+        except HTTPError as error:
+            if error.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
+                raise RuntimeError(f'GitHub API returned HTTP {error.code}: {url}') from error
+        except (URLError, TimeoutError):
+            if attempt == 3:
+                raise
+        time.sleep(2 ** attempt)
+    raise RuntimeError(f'Could not retrieve {url}')
+
+
+def request_text(url):
+    req = Request(url, headers={'User-Agent': 'Mozilla/5.0 b8mi-pixel-profile'})
+    for attempt in range(4):
+        try:
+            with urlopen(req, timeout=35) as response:
+                return response.read().decode('utf-8', 'replace')
+        except HTTPError as error:
+            if error.code not in (403, 429, 500, 502, 503, 504) or attempt == 3:
+                raise RuntimeError(f'GitHub contributions page returned HTTP {error.code}') from error
+        except (URLError, TimeoutError):
+            if attempt == 3:
+                raise
+        time.sleep(2 ** attempt)
+    raise RuntimeError('Could not retrieve GitHub contribution history')
+
+
+def parse_contributions(source):
+    parser = ContributionParser()
+    parser.feed(source)
+    if not parser.cells:
+        raise RuntimeError('GitHub returned no contribution-day cells. The contribution page format may have changed.')
+    counts = {}
+    levels = {}
+    exact = True
+    for cell in parser.cells:
+        day = cell['date']
+        level = cell['level']
+        raw_count = cell.get('count')
+        count = int(raw_count) if raw_count and raw_count.isdigit() else None
+        tooltip = parser.tooltips.get(cell.get('id'), '') if cell.get('id') else ''
+        tooltip = unescape(re.sub(r'<[^>]+>', ' ', tooltip))
+        if count is None and tooltip:
+            if re.search(r'no contributions', tooltip, re.I):
+                count = 0
+            else:
+                match = re.search(r'([\d,]+)\s+contributions?', tooltip, re.I)
+                if match:
+                    count = int(match.group(1).replace(',', ''))
+        if count is None and cell.get('aria'):
+            aria = unescape(cell['aria'])
+            if re.search(r'no contributions', aria, re.I):
+                count = 0
+            else:
+                match = re.search(r'([\d,]+)\s+contributions?', aria, re.I)
+                if match:
+                    count = int(match.group(1).replace(',', ''))
+        if count is None:
+            if level == 0:
+                count = 0
+            else:
+                exact = False
+                count = 1
+        counts[day] = count
+        levels[day] = level
+    if len(counts) < 300:
+        raise RuntimeError(f'GitHub returned only {len(counts)} contribution days; refusing to publish incomplete stats.')
+    if not exact:
+        raise RuntimeError('Some active contribution days did not include exact tooltip counts; refusing to publish partial totals.')
+    return counts, levels
 
 
 def streaks(days, today):
-    best = run = 0
+    best = 0
+    run = 0
     previous = None
     for key in sorted(days):
         day = date.fromisoformat(key)
@@ -104,219 +265,259 @@ def streaks(days, today):
 
 
 def fetch():
-    profile = api('/users/' + USER)
+    token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    profile = request_json(f'https://api.github.com/users/{USER}', token)
     repos = []
     for page in range(1, 101):
-        batch = api(f'/users/{USER}/repos?type=owner&per_page=100&page={page}')
+        url = 'https://api.github.com/users/' + USER + '/repos?' + urlencode({'type': 'owner', 'per_page': 100, 'page': page})
+        batch = request_json(url, token)
         repos.extend(batch)
         if len(batch) < 100:
             break
+    by_name = {repo['name']: repo for repo in repos}
+    missing = [name for name in PROJECTS if name not in by_name]
+    if missing:
+        raise RuntimeError('These featured repositories were not returned by GitHub: ' + ', '.join(missing))
     now = datetime.now(timezone.utc)
-    start = now - timedelta(days=364)
-    days = {}
-    commits = None
-    prs = None
-    total = None
-    best = current = None
-
-    try:
-        query = """query($login:String!, $from:DateTime!, $to:DateTime!){user(login:$login){contributionsCollection(from:$from,to:$to){totalCommitContributions totalPullRequestContributions contributionCalendar{totalContributions weeks{contributionDays{date contributionCount}}}}}}"""
-        data = api('/graphql', {'query': query, 'variables': {'login': USER, 'from': start.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(), 'to': now.isoformat()}})
-        if data.get('errors'):
-            raise RuntimeError(str(data['errors']))
-        cc = data['data']['user']['contributionsCollection']
-        calendar = cc['contributionCalendar']
-        days = {d['date']: d['contributionCount'] for w in calendar['weeks'] for d in w['contributionDays']}
-        current, best = streaks(days, now.date())
-        commits = cc['totalCommitContributions']
-        prs = cc['totalPullRequestContributions']
-        total = calendar['totalContributions']
-    except Exception:
-        html = get_text(f'https://github.com/users/{USER}/contributions?from={start.date().isoformat()}&to={now.date().isoformat()}', {'User-Agent': 'b8mi-profile-updater'})
-        matches = re.findall(r'data-date="([0-9-]+)"[^>]*data-count="([0-9]+)"', html)
-        days = {d: int(c) for d, c in matches}
-        total = sum(days.values())
-        current, best = streaks(days, now.date())
-        # try public search endpoints for commits and PRs, but gracefully fall back
-        try:
-            h = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-profile-updater'}
-            token = os.environ.get('GH_TOKEN')
-            if token:
-                h['Authorization'] = f'Bearer {token}'
-                h['X-GitHub-Api-Version'] = '2022-11-28'
-            cfrom = start.date().isoformat()
-            cto = now.date().isoformat()
-            commit_q = f'https://api.github.com/search/commits?q=author:{USER}+author-date:{cfrom}..{cto}&per_page=1'
-            commit_headers = dict(h)
-            commit_headers['Accept'] = 'application/vnd.github.cloak-preview+json'
-            commits = get_json(commit_q, commit_headers).get('total_count')
-        except Exception:
-            commits = total
-        try:
-            h = {'Accept': 'application/vnd.github+json', 'User-Agent': 'b8mi-profile-updater'}
-            token = os.environ.get('GH_TOKEN')
-            if token:
-                h['Authorization'] = f'Bearer {token}'
-                h['X-GitHub-Api-Version'] = '2022-11-28'
-            cfrom = start.date().isoformat()
-            cto = now.date().isoformat()
-            pr_q = f'https://api.github.com/search/issues?q=type:pr+author:{USER}+created:{cfrom}..{cto}&per_page=1'
-            prs = get_json(pr_q, h).get('total_count')
-        except Exception:
-            prs = 0
-
-    by_name = {r['name']: r for r in repos}
+    first = (now.date() - timedelta(days=364)).isoformat()
+    last = now.date().isoformat()
+    query = urlencode({'from': first, 'to': last})
+    html = request_text(f'https://github.com/users/{USER}/contributions?{query}')
+    days, levels = parse_contributions(html)
+    current, best = streaks(days, now.date())
+    year_contributions = sum(count for day, count in days.items() if day.startswith(str(now.year) + '-'))
+    featured_stars = sum(by_name[name].get('stargazers_count', 0) for name in PROJECTS)
     return {
         'name': profile.get('name') or USER,
         'followers': profile.get('followers', 0),
-        'repos': profile.get('public_repos', 0),
-        'stars': sum(r.get('stargazers_count', 0) for r in repos),
-        'commits': commits,
-        'prs': prs,
-        'total': total,
-        'best': best,
+        'repos': profile.get('public_repos', len(repos)),
+        'stars': featured_stars,
+        'contributions': year_contributions,
+        'total': sum(days.values()),
         'current': current,
+        'best': best,
         'days': days,
+        'levels': levels,
         'projects': by_name,
         'date': now.date().isoformat(),
+        'year': now.year,
+        'synced': now.strftime('%Y-%m-%d %H:%M UTC'),
+        'cache_version': now.strftime('%Y%m%d%H%M%S'),
     }
+
+
+def moon(x, y):
+    pattern = [
+        '001111100',
+        '011000010',
+        '110000000',
+        '110000000',
+        '110000000',
+        '110000000',
+        '011000010',
+        '001111100',
+    ]
+    parts = []
+    for row, line in enumerate(pattern):
+        for col, bit in enumerate(line):
+            if bit == '1':
+                parts.append(rect(x + col * 2, y + row * 2, 2, 2, '#a7e5f5'))
+    return ''.join(parts)
 
 
 def room(data):
     rng = random.Random(91)
-    a = [rect(0, 0, 220, 112, '#0a1423'), rect(0, 0, 220, 69, '#12263b'), rect(0, 90, 220, 22, '#0a1826')]
+    parts = [rect(0, 0, 220, 112, '#0a1423'), rect(0, 0, 220, 69, '#12263b'), rect(0, 90, 220, 22, '#0a1826')]
     for x in range(0, 220, 11):
-        a.append(rect(x, 0, 1, 90, '#192f45'))
-    a += [rect(5, 6, 210, 60, '#06101e'), rect(8, 9, 204, 54, '#0b203d')]
-    a.append('<g clip-path="url(#window)">')
-    for _ in range(75):
-        a.append(rect(rng.randrange(9, 212), rng.randrange(10, 42), 1, 1, rng.choice(['#49718d', '#91d2ef', '#254460'])))
-    a += [
-        rect(172, 14, 3, 1, '#a7e5f5'),
-        rect(171, 15, 2, 1, '#a7e5f5'),
-        rect(170, 16, 2, 1, '#a7e5f5'),
-        rect(169, 17, 2, 2, '#a7e5f5'),
-        rect(168, 19, 2, 3, '#a7e5f5'),
-        rect(169, 22, 2, 2, '#a7e5f5'),
-        rect(170, 24, 2, 1, '#a7e5f5'),
-        rect(171, 25, 2, 1, '#a7e5f5'),
-        rect(172, 26, 3, 1, '#a7e5f5'),
-    ]
+        parts.append(rect(x, 0, 1, 90, '#192f45'))
+    parts += [rect(5, 6, 210, 60, '#06101e'), rect(8, 9, 204, 54, '#0b203d')]
+    parts.append('<g clip-path="url(#window)">')
+    for _ in range(82):
+        sx = rng.randrange(9, 212)
+        sy = rng.randrange(10, 42)
+        if 27 <= sx <= 49 and 14 <= sy <= 33:
+            continue
+        color = rng.choice(['#49718d', '#91d2ef', '#254460'])
+        parts.append(rect(sx, sy, 1, 1, color))
+    parts.append(moon(28, 15))
+    flicker_css = []
+    light_index = 0
     for x in range(8, 212, 9):
-        h = rng.randrange(8, 30)
-        a.append(rect(x, 61 - h, 8, h, '#132c47'))
-        for yy in range(63 - h, 59, 4):
+        height = rng.randrange(8, 30)
+        parts.append(rect(x, 61 - height, 8, height, '#132c47'))
+        for yy in range(63 - height, 59, 4):
             for xx in (x + 1, x + 5):
                 if rng.random() < 0.55:
-                    klass = f'tw{rng.randrange(6)}'
-                    delay = rng.randrange(0, 24) / 3
-                    dur = 4.5 + rng.randrange(0, 20) / 10
-                    a.append(rect(xx, yy, 1, 2, rng.choice(['#3e9ec8', '#7de2ff', '#254d6d']), f'class="{klass}" style="animation-delay:-{delay}s;animation-duration:{dur}s"'))
-    a += [rect(8, 61, 204, 2, '#236080'), '</g>', rect(109, 9, 2, 54, '#142c43'), rect(5, 64, 210, 3, '#3b5970')]
+                    light_index += 1
+                    class_name = f'light{light_index}'
+                    delay = rng.randrange(0, 100) / 10
+                    duration = rng.randrange(45, 90) / 10
+                    dim = rng.choice(['.08', '.16', '.24', '.34'])
+                    off_start = rng.randrange(8, 76)
+                    off_end = min(99, off_start + rng.randrange(2, 7))
+                    flicker_css.append(f'@keyframes {class_name}{{0%,{off_start - 1}%,{off_end + 1}%,100%{{opacity:1}}{off_start}%,{off_end}%{{opacity:{dim}}}}}.{class_name}{{animation:{class_name} {duration}s steps(1) -{delay}s infinite}}')
+                    parts.append(rect(xx, yy, 1, 2, rng.choice(['#3e9ec8', '#7de2ff', '#254d6d']), f'class="{class_name}"'))
+    parts += [rect(8, 61, 204, 2, '#236080'), '</g>', rect(109, 9, 2, 54, '#142c43'), rect(5, 64, 210, 3, '#3b5970')]
     for y in range(94, 112, 6):
-        a.append(rect(0, y, 220, 1, '#192c40'))
-
-    a += [rect(19, 79, 182, 4, '#35516a'), rect(19, 83, 182, 2, '#183146'), rect(24, 85, 4, 16, '#243c51'), rect(193, 85, 4, 16, '#243c51'), rect(40, 45, 72, 31, '#385871'), rect(42, 47, 68, 27, '#06121f'), rect(72, 76, 8, 3, '#385871'), rect(65, 78, 22, 1, '#56788c')]
-    a.append(text(45, 52, '> b8mi / terminal', 3.1, ICE))
-    lines = ['> public repositories', '> stars received', '> contributions / 365d']
-    vals = [data.get('repos'), data.get('stars'), data.get('total')]
-    for i, (label, val) in enumerate(zip(lines, vals)):
-        a.append(text(45, 58 + i * 5, label, 2.7, MUTED))
-        a.append(text(107, 58 + i * 5, '--' if val is None else val, 3, ICE, 'text-anchor="end"'))
-    a.append(rect(45, 70, 3, 1, ICE, 'class="blink"'))
-    a += [rect(38, 80, 65, 1, '#7590a4'), rect(116, 77, 7, 2, '#5d7c95'), rect(129, 47, 66, 32, '#51738b'), rect(131, 49, 62, 28, '#123c58'), rect(131, 74, 62, 3, '#24465c')]
+        parts.append(rect(0, y, 220, 1, '#192c40'))
+    parts += [rect(19, 79, 182, 4, '#35516a'), rect(19, 83, 182, 2, '#183146'), rect(24, 85, 4, 16, '#243c51'), rect(193, 85, 4, 16, '#243c51'), rect(40, 45, 72, 31, '#385871'), rect(42, 47, 68, 27, '#06121f'), rect(72, 76, 8, 3, '#385871'), rect(65, 78, 22, 1, '#56788c')]
+    parts.append(pixel_text(45, 52, '> B8MI / TERMINAL', 3.1, ICE))
+    labels = ['> PUBLIC REPOSITORIES', '> FEATURED STARS', f'> CONTRIBUTIONS / {data.get("year", "YEAR")}']
+    values = [data.get('repos'), data.get('stars'), data.get('contributions')]
+    for index, (label, value) in enumerate(zip(labels, values)):
+        parts.append(pixel_text(45, 58 + index * 5, label, 2.55, MUTED))
+        parts.append(pixel_text(107, 58 + index * 5, 'SYNC' if value is None else value, 2.8, ICE, 'text-anchor="end"'))
+    parts.append(rect(45, 70, 3, 1, ICE, 'class="blink"'))
+    parts += [rect(38, 80, 65, 1, '#7590a4'), rect(116, 77, 7, 2, '#5d7c95'), rect(129, 47, 66, 32, '#51738b'), rect(131, 49, 62, 28, '#123c58'), rect(131, 74, 62, 3, '#24465c')]
     for x in (136, 141, 184, 189):
         for j in range(5):
-            a.append(rect(x + (j % 2), 74 - j * 2, 1, 3, '#297a84'))
-    a.append('<g clip-path="url(#tank)">')
-    for i, (x, y, c) in enumerate([(142, 58, '#7feaff'), (166, 66, '#f4bd79'), (178, 55, '#82a9f5')]):
-        a.append(f'<g class="fish" style="animation-delay:-{i * 2}s">')
-        a += [rect(x, y, 6, 3, c), rect(x + 6, y - 1, 3, 5, c), rect(x + 1, y + 1, 1, 1, '#0b203d'), '</g>']
-    for i in range(7):
-        a.append(rect(137 + i * 8, 70 - (i * 3) % 16, 1, 1, '#9fe7f4', f'class="bubble" style="animation-delay:-{i * .6}s"'))
-    a += ['</g>', rect(131, 49, 62, 1, '#78c6e2'), rect(131, 49, 1, 28, '#78c6e2'), rect(129, 77, 66, 2, '#5c8095')]
-    a += [rect(7, 91, 206, 15, '#081321'), text(12, 101, '3ZMI  /  AFTER HOURS', 5, ICE, 'font-weight="bold"'), text(208, 101, 'CODE  //  CREATE', 3.5, MUTED, 'text-anchor="end"')]
-    defs = '<defs><clipPath id="window"><rect x="8" y="9" width="204" height="54"/></clipPath><clipPath id="tank"><rect x="132" y="50" width="60" height="24"/></clipPath></defs>'
-    css = '.blink{animation:cursor 1s steps(1) infinite}.fish{animation:fish 8s ease-in-out infinite alternate}.bubble{animation:bubble 4s linear infinite}.tw0{animation:f0 5.0s steps(1) infinite}.tw1{animation:f1 5.7s steps(1) infinite}.tw2{animation:f2 6.1s steps(1) infinite}.tw3{animation:f3 6.8s steps(1) infinite}.tw4{animation:f4 5.4s steps(1) infinite}.tw5{animation:f5 7.2s steps(1) infinite}@keyframes cursor{50%{opacity:0}}@keyframes f0{0%,84%,100%{opacity:1}85%,88%{opacity:.20}}@keyframes f1{0%,12%,100%{opacity:1}13%,16%{opacity:.22}}@keyframes f2{0%,37%,100%{opacity:1}38%,41%{opacity:.26}}@keyframes f3{0%,58%,100%{opacity:1}59%,62%{opacity:.22}}@keyframes f4{0%,72%,100%{opacity:1}73%,76%{opacity:.24}}@keyframes f5{0%,92%,100%{opacity:1}93%,96%{opacity:.18}}@keyframes fish{from{transform:translateX(-5px)}to{transform:translateX(8px)}}@keyframes bubble{to{transform:translateY(-20px);opacity:0}}'
-    write('room.svg', svg(880, 448, '3zmi midnight pixel workstation and aquarium', defs + '<g transform="scale(4)" shape-rendering="crispEdges">' + ''.join(a) + '</g>', css))
-
-
-ICONS = {
-    'pdf': ['001111100', '001222100', '001222110', '001222221', '001212221', '001222221', '001211121', '001222221', '001111111'],
-    'beads': ['000111000', '001000100', '010000010', '100000001', '100000001', '100000001', '010000010', '001010100', '000111000'],
-    'media': ['111111111', '122222221', '120222221', '120022221', '120002221', '120022221', '120222221', '122222221', '111111111'],
-    'math': ['100000001', '100000010', '100000100', '100001000', '111111111', '100100000', '101000000', '110000000', '111111111'],
-}
+            parts.append(rect(x + (j % 2), 74 - j * 2, 1, 3, '#297a84'))
+    parts.append('<g clip-path="url(#tank)">')
+    for index, (x, y, color) in enumerate([(142, 58, '#7feaff'), (166, 66, '#f4bd79'), (178, 55, '#82a9f5')]):
+        parts.append(f'<g class="fish fish{index}" style="animation-delay:-{index * 2.1}s">')
+        parts += [rect(x, y, 6, 3, color), rect(x + 6, y - 1, 3, 5, color), rect(x + 1, y + 1, 1, 1, '#0b203d'), '</g>']
+    for index in range(7):
+        parts.append(rect(137 + index * 8, 70 - (index * 3) % 16, 1, 1, '#9fe7f4', f'class="bubble" style="animation-delay:-{index * .6}s"'))
+    parts += ['</g>', rect(131, 49, 62, 1, '#78c6e2'), rect(131, 49, 1, 28, '#78c6e2'), rect(129, 77, 66, 2, '#5c8095')]
+    parts += [rect(7, 91, 206, 15, '#081321'), pixel_text(12, 101, '3ZMI / AFTER HOURS', 5, ICE), pixel_text(208, 101, 'CODE // CREATE', 3.5, MUTED, 'text-anchor="end"')]
+    definitions = '<defs><clipPath id="window"><rect x="8" y="9" width="204" height="54"/></clipPath><clipPath id="tank"><rect x="132" y="50" width="60" height="24"/></clipPath></defs>'
+    css = '.blink{animation:cursor 1s steps(1) infinite}.fish{animation:fish 8s ease-in-out infinite alternate}.fish1{animation-duration:9.3s}.fish2{animation-duration:7.1s}.bubble{animation:bubble 4s linear infinite}@keyframes cursor{50%{opacity:0}}@keyframes fish{from{transform:translateX(-5px)}to{transform:translateX(8px)}}@keyframes bubble{to{transform:translateY(-20px);opacity:0}}' + ''.join(flicker_css)
+    body = definitions + '<g transform="scale(4)" shape-rendering="crispEdges">' + ''.join(parts) + '</g>'
+    write('room.svg', svg(880, 448, 'Midnight pixel-art workstation, city skyline and aquarium', body, css))
 
 
 def card(name, description, icon, repo):
-    a = [rect(.5, .5, 429, 167, PANEL, f'rx="10" stroke="{EDGE}"'), rect(14, 19, 98, 104, '#0b2b45', 'rx="6"'), rect(15, 20, 96, 102, 'none', 'rx="6" stroke="#275472"')]
-    icon_x0 = 25 if icon == 'pdf' else 27
-    a.append('<g class="float" shape-rendering="crispEdges">')
-    for y, row in enumerate(ICONS[icon]):
-        for x, v in enumerate(row):
-            if v != '0':
-                a.append(rect(icon_x0 + x * 8, 35 + y * 8, 8, 8, BLUE if v == '1' else '#205676'))
-    a.append('</g>')
-    a.append(text(128, 37, name, 16, WHITE, 'font-weight="bold"'))
-    description = description.split('|')[-1].strip() if icon == 'beads' else description
-    for i, line in enumerate(textwrap.wrap(description, width=33)[:4]):
-        a.append(text(128, 60 + i * 17, line, 12, MUTED))
+    parts = [rect(.5, .5, 429, 167, PANEL, f'rx="10" stroke="{EDGE}"'), rect(14, 19, 98, 104, '#0b2b45', 'rx="6"'), rect(15, 20, 96, 102, 'none', 'rx="6" stroke="#275472"')]
+    icon_x = 19 if icon == 'pdf' else 27
+    parts.append('<g shape-rendering="crispEdges">')
+    for row, line in enumerate(ICONS[icon]):
+        for col, value in enumerate(line):
+            if value != '0':
+                parts.append(rect(icon_x + col * 8, 35 + row * 8, 8, 8, BLUE if value == '1' else '#205676'))
+    parts.append('</g>')
+    parts.append(pixel_text(128, 37, name, 13, WHITE))
+    for index, line in enumerate(textwrap.wrap(description, width=39)[:4]):
+        parts.append(pixel_text(128, 59 + index * 15, line, 8.5, MUTED))
     stars = repo.get('stargazers_count') if repo else None
-    language = (repo.get('language') or 'Unknown') if repo is not None else 'Python'
-    a.append(text(18, 148, language.upper()[:20], 11, ICE))
-    a.append(text(412, 148, 'Stars: ' + ('—' if stars is None else str(stars)), 12, ICE, 'text-anchor="end"'))
-    write(name + '.svg', svg(430, 168, name + ' — ' + description, ''.join(a), '.float{animation:float 3.6s ease-in-out infinite}@keyframes float{50%{transform:translateY(-4px)}}'))
+    language = (repo.get('language') or 'UNKNOWN') if repo is not None else 'SYNC'
+    parts.append(pixel_text(18, 148, language[:20], 8.5, ICE))
+    parts.append(pixel_text(412, 148, 'STARS: ' + ('SYNC' if stars is None else str(stars)), 8.5, ICE, 'text-anchor="end"'))
+    write(name + '.svg', svg(430, 168, name + ' project card with live repository stars', ''.join(parts)))
+
+
+def intro():
+    parts = [pixel_text(440, 28, 'I BUILD SOFTWARE, GAMES AND TOOLS THAT MAKE THINGS A LITTLE EASIER.', 10, WHITE, 'text-anchor="middle"'), pixel_text(440, 49, 'STAR A REPOSITORY IF YOU FIND IT USEFUL.', 9, ICE, 'text-anchor="middle"')]
+    write('intro.svg', svg(880, 62, 'Pixel-art introduction', ''.join(parts)))
+
+
+def github_button():
+    parts = [rect(365, 2, 150, 30, '#0d263c', 'stroke="#28739a"'), rect(369, 6, 142, 22, '#102f49', 'stroke="#1e5778"'), pixel_text(440, 22, 'OPEN GITHUB', 9, ICE, 'text-anchor="middle"')]
+    write('github-button.svg', svg(880, 36, 'Open GitHub profile', ''.join(parts)))
+
+
+def projects_heading():
+    parts = [pixel_text(24, 24, 'PROJECTS', 14, ICE), rect(126, 20, 730, 1, EDGE), rect(126, 22, 730, 1, '#18354d')]
+    write('projects-heading.svg', svg(880, 34, 'Projects section', ''.join(parts)))
 
 
 def stats(data):
-    a = [rect(.5, .5, 879, 129, PANEL, f'rx="10" stroke="{EDGE}"')]
-    for i, (key, label) in enumerate([('commits', 'COMMITS / 365D'), ('prs', 'PRs / 365D'), ('stars', 'PUBLIC REPO STARS'), ('best', 'BEST STREAK / 365D')]):
-        x = 24 + i * 220
-        v = data.get(key)
-        a += [text(x, 48, '—' if v is None else v, 32, ICE, 'font-weight="bold"'), text(x, 76, label, 11, MUTED)]
-        if i:
-            a.append(rect(x - 16, 24, 1, 60, EDGE))
-    a.append(text(24, 109, 'Public repositories: ' + str(data.get('repos', '—')) + '   /   Followers: ' + str(data.get('followers', '—')), 12, MUTED))
-    a.append(text(855, 109, 'UTC ' + data.get('date', 'awaiting first sync'), 11, MUTED, 'text-anchor="end"'))
-    write('stats.svg', svg(880, 130, 'GitHub activity statistics', ''.join(a)))
+    parts = [rect(.5, .5, 879, 129, PANEL, f'rx="10" stroke="{EDGE}"')]
+    metrics = [
+        ('contributions', f'CONTRIBUTIONS / {data.get("year", "YEAR")}'),
+        ('stars', 'FEATURED PROJECT STARS'),
+        ('repos', 'PUBLIC REPOSITORIES'),
+        ('followers', 'FOLLOWERS'),
+    ]
+    for index, (key, label) in enumerate(metrics):
+        x = 24 + index * 220
+        value = data.get(key)
+        shown = 'SYNC' if value is None else value
+        parts.append(pixel_text(x, 48, shown, 23, ICE))
+        parts.append(pixel_text(x, 76, label, 7.5, MUTED))
+        if index:
+            parts.append(rect(x - 16, 24, 1, 60, EDGE))
+    parts.append(pixel_text(24, 109, 'ACTIVITY WINDOW: LAST 365 DAYS', 8, MUTED))
+    parts.append(pixel_text(855, 109, 'SYNC ' + data.get('synced', 'AWAITING FIRST RUN'), 7.5, MUTED, 'text-anchor="end"'))
+    write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
 
 def activity(data):
-    a = [rect(.5, .5, 879, 200, PANEL, f'rx="10" stroke="{EDGE}"'), text(24, 28, '> ACTIVITY / LAST 365 DAYS', 15, ICE, 'font-weight="bold"')]
+    parts = [rect(.5, .5, 879, 218, PANEL, f'rx="10" stroke="{EDGE}"'), pixel_text(24, 28, '> ACTIVITY / LAST 365 DAYS', 10, ICE)]
     if not data.get('days'):
-        a.append(text(24, 98, 'Open Actions and run the workflow once to load live contribution history.', 14, MUTED))
+        parts.append(pixel_text(24, 92, str(data.get('contributions', 'SYNC')) + ' CONTRIBUTIONS IN ' + str(data.get('year', 'YEAR')), 12, ICE))
+        parts.append(pixel_text(24, 119, 'DAILY PIXEL GRID LOADS AFTER THE FIRST WORKFLOW RUN.', 8.5, MUTED))
     else:
         end = date.fromisoformat(data['date'])
         first = end - timedelta(days=364)
         start = first - timedelta(days=(first.weekday() + 1) % 7)
         palette = ['#152b40', '#1d4768', '#256a93', '#319dc7', '#7de7ff']
         for week in range(53):
-            for d in range(7):
-                day = start + timedelta(days=week * 7 + d)
-                key = day.isoformat()
+            for day_index in range(7):
+                current_day = start + timedelta(days=week * 7 + day_index)
+                key = current_day.isoformat()
                 if key not in data['days']:
                     continue
-                n = data['days'][key]
-                level = 0 if n == 0 else 1 if n <= 2 else 2 if n <= 5 else 3 if n <= 10 else 4
-                a.append(rect(24 + week * 16, 43 + d * 16, 12, 12, palette[level], 'rx="2"'))
-        a.append(text(24, 178, str(data['total']) + ' contributions', 14, ICE))
-        a.append(text(24, 194, 'Current streak: ' + str(data['current']) + 'd   /   Best: ' + str(data['best']) + 'd', 11, MUTED))
-        a.append(text(855, 178, 'UTC ' + data['date'], 12, MUTED, 'text-anchor="end"'))
-    write('activity.svg', svg(880, 201, 'GitHub contribution calendar', ''.join(a)))
+                level = data.get('levels', {}).get(key, 0)
+                parts.append(rect(24 + week * 16, 43 + day_index * 17, 12, 12, palette[max(0, min(4, level))]))
+        parts.append(pixel_text(24, 184, str(data['total']) + ' CONTRIBUTIONS IN 365 DAYS', 9, ICE))
+        parts.append(pixel_text(24, 204, 'CURRENT STREAK: ' + str(data['current']) + 'D   /   BEST: ' + str(data['best']) + 'D', 8, MUTED))
+        parts.append(pixel_text(855, 184, 'UPDATED ' + data['date'], 7.5, MUTED, 'text-anchor="end"'))
+    write('activity.svg', svg(880, 219, 'Pixel-art GitHub contribution calendar for the last 365 days', ''.join(parts)))
+
+
+def update_readme_cache_bust(version):
+    readme = ROOT / 'README.md'
+    source = readme.read_text(encoding='utf-8')
+    source = re.sub(r'(assets/[A-Za-z0-9_.-]+\.svg)(?:\?v=[^" )]+)?', rf'\1?v={version}', source)
+    readme.write_text(source, encoding='utf-8')
 
 
 def render(data):
     room(data)
+    intro()
+    github_button()
+    projects_heading()
     stats(data)
     activity(data)
-    for name, (desc, icon) in PROJECTS.items():
-        card(name, desc, icon, data.get('projects', {}).get(name))
+    for name, (description, icon) in PROJECTS.items():
+        card(name, description, icon, data.get('projects', {}).get(name))
+    update_readme_cache_bust(data.get('cache_version', datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')))
+
+
+def seed_data():
+    project_stars = {
+        'Python-PDF-Toolkits': 24,
+        'MISBA7ATY': 8,
+        'Media_Converter': 23,
+        'MathsTools': 20,
+    }
+    projects = {
+        name: {'name': name, 'language': 'Python', 'stargazers_count': stars}
+        for name, stars in project_stars.items()
+    }
+    return {
+        'repos': 12,
+        'followers': 17,
+        'stars': sum(project_stars.values()),
+        'contributions': 273,
+        'total': None,
+        'current': None,
+        'best': None,
+        'days': {},
+        'levels': {},
+        'projects': projects,
+        'date': '2026-11-26',
+        'year': 2026,
+        'synced': 'LIVE DATA ON FIRST RUN',
+        'cache_version': '20261126000100',
+    }
 
 
 if __name__ == '__main__':
     import sys
-    if '--placeholder' in sys.argv:
-        render({})
+    if '--seed' in sys.argv:
+        render(seed_data())
     else:
-        render(fetch())
+        live = fetch()
+        render(live)
+        print(json.dumps({key: live[key] for key in ('repos', 'followers', 'stars', 'contributions', 'total', 'current', 'best', 'synced')}, indent=2))

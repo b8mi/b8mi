@@ -1,29 +1,30 @@
 <p align="center">
-  <img src="assets/room.svg" width="100%" alt="3zmi's midnight pixel workstation">
+  <img src="assets/room.svg?v=20261126000100" width="100%" alt="3zmi's midnight pixel-art workstation and aquarium">
 </p>
 
 <p align="center">
-  I build software, games and tools that make things a little easier.<br>
-  Star a repository if you find it useful!
+  <img src="assets/intro.svg?v=20261126000100" width="100%" alt="I build software, games and tools that make things a little easier">
 </p>
 
 <p align="center">
-  <a href="https://github.com/b8mi">GitHub</a>
+  <a href="https://github.com/b8mi"><img src="assets/github-button.svg?v=20261126000100" width="100%" alt="Open GitHub profile"></a>
 </p>
 
 <p align="center">
-  <img src="assets/stats.svg" width="100%" alt="GitHub statistics">
-</p>
-
-## Projects
-
-<p align="center">
-  <a href="https://github.com/b8mi/Python-PDF-Toolkits"><img src="assets/Python-PDF-Toolkits.svg" width="49%" alt="Python-PDF-Toolkits"></a>
-  <a href="https://github.com/b8mi/MISBA7ATY"><img src="assets/MISBA7ATY.svg" width="49%" alt="MISBA7ATY"></a>
-  <a href="https://github.com/b8mi/Media_Converter"><img src="assets/Media_Converter.svg" width="49%" alt="Media Converter"></a>
-  <a href="https://github.com/b8mi/MathsTools"><img src="assets/MathsTools.svg" width="49%" alt="MathsTools"></a>
+  <img src="assets/stats.svg?v=20261126000100" width="100%" alt="Live GitHub statistics">
 </p>
 
 <p align="center">
-  <img src="assets/activity.svg" width="100%" alt="GitHub contribution history">
+  <img src="assets/projects-heading.svg?v=20261126000100" width="100%" alt="Projects">
+</p>
+
+<p align="center">
+  <a href="https://github.com/b8mi/Python-PDF-Toolkits"><img src="assets/Python-PDF-Toolkits.svg?v=20261126000100" width="49%" alt="Python PDF Toolkits"></a>
+  <a href="https://github.com/b8mi/MISBA7ATY"><img src="assets/MISBA7ATY.svg?v=20261126000100" width="49%" alt="MISBA7ATY"></a>
+  <a href="https://github.com/b8mi/Media_Converter"><img src="assets/Media_Converter.svg?v=20261126000100" width="49%" alt="Media Converter"></a>
+  <a href="https://github.com/b8mi/MathsTools"><img src="assets/MathsTools.svg?v=20261126000100" width="49%" alt="MathsTools"></a>
+</p>
+
+<p align="center">
+  <img src="assets/activity.svg?v=20261126000100" width="100%" alt="GitHub contribution history for the last 365 days">
 </p>
