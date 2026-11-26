@@ -7,11 +7,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/stats.svg?v=6ac551e4b4d5" width="100%" alt="Live GitHub statistics">
+  <img src="assets/stats.svg?v=44d6dcb1f303" width="100%" alt="Live GitHub statistics">
 </p>
 
 <p align="center">
-  <img src="assets/projects-heading.svg?v=20261126134540" width="100%" alt="Featured Projects">
+  <img src="assets/projects-heading.svg?v=4bc2ede3a2d8" width="100%" alt="Examples of what I do">
 </p>
 
 <p align="center">

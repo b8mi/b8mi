@@ -198,7 +198,7 @@ def request_text(url):
     raise RuntimeError('Could not retrieve GitHub contribution history')
 
 
-def parse_contributions(source):
+def parse_contributions(source, min_days=300):
     parser = ContributionParser()
     parser.feed(source)
     if not parser.cells:
@@ -236,7 +236,7 @@ def parse_contributions(source):
                 count = 1
         counts[day] = count
         levels[day] = level
-    if len(counts) < 300:
+    if len(counts) < min_days:
         raise RuntimeError(f'GitHub returned only {len(counts)} contribution days; refusing to publish incomplete stats.')
     if not exact:
         raise RuntimeError('Some active contribution days did not include exact tooltip counts; refusing to publish partial totals.')
@@ -389,7 +389,7 @@ def fetch():
                 pinned.append(resolve_featured(repo))
 
     now = datetime.now(timezone.utc)
-    first_day = now.date() - timedelta(days=364)
+    first_day = date(now.year, 1, 1)
     first = first_day.isoformat()
     last = now.date().isoformat()
     days = {}
@@ -418,7 +418,11 @@ def fetch():
     else:
         try:
             html = request_text(f'https://github.com/users/{USER}/contributions?' + urlencode({'from': first, 'to': last}))
-            days, levels = parse_contributions(html)
+            days, levels = parse_contributions(html, min_days=(now.date() - first_day).days + 1)
+            days = {key: value for key, value in days.items() if first <= key <= last}
+            levels = {key: value for key, value in levels.items() if key in days}
+            if len(days) != (now.date() - first_day).days + 1:
+                raise RuntimeError("Incomplete contribution year")
             contributions = sum(days.values())
         except Exception:
             days, levels = {}, {}
@@ -713,46 +717,35 @@ def intro():
 
 
 def projects_heading():
-    parts = [pixel_text(24, 24, 'FEATURED PROJECTS', 14, ICE), rect(244, 20, 612, 1, EDGE), rect(244, 22, 612, 1, '#18354d')]
-    write('projects-heading.svg', svg(880, 34, 'Featured projects section', ''.join(parts)))
+    parts = [pixel_text(24, 24, 'EXAMPLES OF WHAT I DO', 14, ICE), rect(292, 20, 564, 1, EDGE), rect(292, 22, 564, 1, '#18354d')]
+    write('projects-heading.svg', svg(880, 34, 'Examples of what I do', ''.join(parts)))
 
 
 def stats(data):
-    def pixel_star(x, y, color, size=1):
-        return ''.join([
-            rect(x + size, y, size, size, color),
-            rect(x, y + size, size, size, color),
-            rect(x + size, y + size, size, size, color),
-            rect(x + 2 * size, y + size, size, size, color),
-            rect(x + size, y + 2 * size, size, size, color),
-        ])
+    def pixel_star(x, y):
+        parts = []
+        for dx, dy, color in [(0, -2, '#18354d'), (0, 2, '#18354d'), (-2, 0, '#18354d'), (2, 0, '#18354d'), (0, -1, '#438eae'), (0, 1, '#438eae'), (-1, 0, '#438eae'), (1, 0, '#438eae'), (0, 0, '#b9f2ff')]:
+            parts.append(rect(x + dx * 2 - 1, y + dy * 2 - 1, 2, 2, color))
+        return '<g shape-rendering="crispEdges">' + ''.join(parts) + '</g>'
 
-    parts = [rect(.5, .5, 879, 129, PANEL, f'rx="10" stroke="{EDGE}"')]
+    parts = [rect(.5, .5, 879, 95, PANEL, f'rx="10" stroke="{EDGE}"')]
     metrics = [
         ('repos', 'REPOSITORIES'),
         ('stars', 'TOTAL GAINED STARS'),
         ('contributions', f'TOTAL CONTRIBUTIONS / {data.get("year", "YEAR")}'),
     ]
-    x_positions = [28, 320, 612]
-    for index, ((key, label), x) in enumerate(zip(metrics, x_positions)):
+    for x in (293, 587):
+        parts.append(rect(x, 14, 1, 68, EDGE))
+    for index, (key, label) in enumerate(metrics):
+        x = (index + .5) * 880 / 3
         value = data.get(key)
         shown = '--' if value is None else value
-        parts.append(pixel_text(x, 48, shown, 23, ICE))
-        parts.append(pixel_text(x, 76, label, 7.5, MUTED))
-        if index:
-            parts.append(rect(x - 28, 24, 1, 60, EDGE))
-
-    # sparkling pixel stars around the middle metric
-    parts.append(pixel_star(292, 28, '#3e7ea3', 2))
-    parts.append(pixel_star(334, 17, '#79dbff', 1))
-    parts.append(pixel_star(520, 22, '#4f8bad', 2))
-    parts.append(pixel_star(552, 36, '#9cecff', 1))
-    parts.append(pixel_star(300, 60, '#6ccfff', 1))
-    parts.append(pixel_star(540, 64, '#3d6d8f', 2))
-
-    parts.append(pixel_text(24, 109, 'EXAMPLES OF WHAT I DO', 8, MUTED))
-    parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'READY'), 7.5, MUTED, 'text-anchor="end"'))
-    write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
+        parts.append(pixel_text(x, 41, shown, 26, ICE, 'text-anchor="middle"'))
+        parts.append(pixel_text(x, 72, label, 9, MUTED, 'text-anchor="middle"'))
+    label_half = (len(metrics[1][1]) * 6 - 1) * (9 / 7) / 2
+    parts.append(pixel_star(round(440 - label_half - 10), 67))
+    parts.append(pixel_star(round(440 + label_half + 10), 67))
+    write('stats.svg', svg(880, 96, 'GitHub profile statistics: repositories, total gained stars and yearly contributions', ''.join(parts)))
 
 
 def update_readme_cache_bust(version):
@@ -776,7 +769,7 @@ def write_readme(data):
         f'  <img src="assets/stats.svg?v={version}" width="100%" alt="Live GitHub statistics">',
         '</p>', '',
         '<p align="center">',
-        f'  <img src="assets/projects-heading.svg?v={version}" width="100%" alt="Featured Projects">',
+        f'  <img src="assets/projects-heading.svg?v={version}" width="100%" alt="Examples of what I do">',
         '</p>', '',
         '<p align="center">',
     ]
@@ -834,4 +827,4 @@ if __name__ == '__main__':
     else:
         live = fetch()
         render(live)
-        print(json.dumps({key: live[key] for key in ('repos', 'followers', 'stars', 'commits', 'prs', 'contributions', 'total', 'current', 'best', 'synced')}, indent=2))
+        print(json.dumps({key: live[key] for key in ('repos', 'stars', 'contributions', 'synced')}, indent=2))
