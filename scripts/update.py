@@ -296,12 +296,16 @@ def fetch():
     token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
     profile = request_json(f'https://api.github.com/users/{USER}', token)
     repos = []
-    for page in range(1, 101):
+    page = 1
+    while True:
         url = 'https://api.github.com/users/' + USER + '/repos?' + urlencode({'type': 'owner', 'per_page': 100, 'page': page})
         batch = request_json(url, token)
-        repos.extend(batch)
+        if not isinstance(batch, list):
+            raise RuntimeError('Invalid repository response')
+        repos.extend(repo for repo in batch if not repo.get('private', False))
         if len(batch) < 100:
             break
+        page += 1
 
     by_name = {repo['name'].casefold(): repo for repo in repos}
     for name in PROJECTS:
@@ -363,12 +367,12 @@ def fetch():
         except Exception:
             prs = None
 
-    featured_stars = None if any(repo is None for repo in project_map.values()) else sum(repo.get('stargazers_count', 0) for repo in project_map.values())
+    total_stars = sum(repo['stargazers_count'] for repo in repos)
     return {
         'name': profile.get('name') or USER,
         'followers': profile.get('followers', 0),
         'repos': profile.get('public_repos', len(repos)),
-        'stars': featured_stars,
+        'stars': total_stars,
         'commits': commits,
         'prs': prs,
         'contributions': contributions,
@@ -505,7 +509,7 @@ def room(data):
         parts.append(rect(0, y, 220, 1, '#192c40'))
     parts += [rect(19, 79, 182, 4, '#35516a'), rect(19, 83, 182, 2, '#183146'), rect(24, 85, 4, 16, '#243c51'), rect(193, 85, 4, 16, '#243c51'), rect(40, 45, 72, 31, '#385871'), rect(42, 47, 68, 27, '#06121f'), rect(72, 76, 8, 3, '#385871'), rect(65, 78, 22, 1, '#56788c')]
     parts.append(pixel_text(45, 52, '> B8MI / TERMINAL', 3.1, ICE))
-    labels = ['> PUBLIC REPOSITORIES', '> FEATURED STARS', f'> CONTRIBUTIONS / {data.get("year", "YEAR")}']
+    labels = ['> REPOSITORIES', '> TOTAL REPO STARS', f'> CONTRIBUTIONS / {data.get("year", "YEAR")}']
     values = [data.get('repos'), data.get('stars'), data.get('contributions')]
     for index, (label, value) in enumerate(zip(labels, values)):
         parts.append(pixel_text(45, 58 + index * 5, label, 2.55, MUTED))
@@ -634,27 +638,44 @@ def intro():
 
 
 def projects_heading():
-    parts = [pixel_text(24, 24, 'PROJECTS', 14, ICE), rect(126, 20, 730, 1, EDGE), rect(126, 22, 730, 1, '#18354d')]
-    write('projects-heading.svg', svg(880, 34, 'Projects section', ''.join(parts)))
+    parts = [pixel_text(24, 24, 'FEATURED PROJECTS', 14, ICE), rect(244, 20, 612, 1, EDGE), rect(244, 22, 612, 1, '#18354d')]
+    write('projects-heading.svg', svg(880, 34, 'Featured projects section', ''.join(parts)))
 
 
 def stats(data):
+    def pixel_star(x, y, color, size=1):
+        return ''.join([
+            rect(x + size, y, size, size, color),
+            rect(x, y + size, size, size, color),
+            rect(x + size, y + size, size, size, color),
+            rect(x + 2 * size, y + size, size, size, color),
+            rect(x + size, y + 2 * size, size, size, color),
+        ])
+
     parts = [rect(.5, .5, 879, 129, PANEL, f'rx="10" stroke="{EDGE}"')]
     metrics = [
-        ('repos', 'PUBLIC REPOSITORIES'),
-        ('followers', 'FOLLOWERS'),
-        ('stars', 'FEATURED REPO STARS'),
-        ('contributions', 'CONTRIBUTIONS / YEAR'),
+        ('repos', 'REPOSITORIES'),
+        ('stars', 'TOTAL GAINED STARS'),
+        ('contributions', f'TOTAL CONTRIBUTIONS / {data.get("year", "YEAR")}'),
     ]
-    for index, (key, label) in enumerate(metrics):
-        x = 24 + index * 220
+    x_positions = [28, 320, 612]
+    for index, ((key, label), x) in enumerate(zip(metrics, x_positions)):
         value = data.get(key)
         shown = '--' if value is None else value
         parts.append(pixel_text(x, 48, shown, 23, ICE))
         parts.append(pixel_text(x, 76, label, 7.5, MUTED))
         if index:
-            parts.append(rect(x - 16, 24, 1, 60, EDGE))
-    parts.append(pixel_text(24, 109, f'FEATURED PROJECTS: {len(PROJECTS)} / PROFILE: {USER.upper()}', 8, MUTED))
+            parts.append(rect(x - 28, 24, 1, 60, EDGE))
+
+    # sparkling pixel stars around the middle metric
+    parts.append(pixel_star(292, 28, '#3e7ea3', 2))
+    parts.append(pixel_star(334, 17, '#79dbff', 1))
+    parts.append(pixel_star(520, 22, '#4f8bad', 2))
+    parts.append(pixel_star(552, 36, '#9cecff', 1))
+    parts.append(pixel_star(300, 60, '#6ccfff', 1))
+    parts.append(pixel_star(540, 64, '#3d6d8f', 2))
+
+    parts.append(pixel_text(24, 109, f'SHOWING {len(PROJECTS)} FEATURED PROJECTS OUT OF {data.get("repos", "--")}', 8, MUTED))
     parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'READY'), 7.5, MUTED, 'text-anchor="end"'))
     write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
@@ -686,7 +707,7 @@ def seed_data():
     return {
         'repos': 12,
         'followers': 17,
-        'stars': 75,
+        'stars': '90+',
         'commits': None,
         'prs': None,
         'contributions': 273,
@@ -698,7 +719,7 @@ def seed_data():
         'projects': projects,
         'date': '2026-11-26',
         'year': 2026,
-        'synced': 'PROFILE SNAPSHOT',
+        'synced': 'PARTIAL SNAPSHOT',
         'cache_version': datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S'),
     }
 
