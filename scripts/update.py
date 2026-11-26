@@ -430,55 +430,36 @@ def line_points(start, end):
 
 def draw_math_icon(parts):
     x0, y0, step = 27, 35, 8
-    axis_main = '#55d9ff'
-    axis_shadow = '#1d6d8b'
-    # vertical axis
+    axis = '#6d5cff'
+    axis_dark = '#4a3db2'
+    line1 = '#76e6ff'
+    line2 = '#4fb3ff'
+    # old-style axes
     for row in range(9):
-        parts.append(rect(x0 + 1, y0 + row * step, 6, 8, axis_main))
-    # horizontal axis
+        parts.append(rect(x0, y0 + row * step, 8, 8, axis if row != 8 else axis_dark))
     for col in range(9):
-        parts.append(rect(x0 + col * step, y0 + 8 * step + 1, 8, 6, axis_main))
-    # base square point at lower-left
-    for col,row,color in [
-        (1,7,'#5ae6ff'), (2,7,'#4ad3ff'), (1,8,'#58e3ff'), (2,8,'#2d86ff')
-    ]:
-        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, color))
-    # diagonal pixels with per-pixel colors like the reference
-    diagonal = [
-        ((2,7),'#3dc0ff'), ((3,6),'#4fb8ff'), ((4,5),'#6aa8ff'),
-        ((5,4),'#7a96ff'), ((6,3),'#8d7cff'), ((7,2),'#7d65ff'), ((8,1),'#4d71ff')
-    ]
-    for (col,row),color in diagonal:
-        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, color))
-    highlights = [
-        ((2,7),'#89f1ff'), ((3,6),'#9ee9ff'), ((4,5),'#a7d8ff'),
-        ((5,4),'#c8b8ff'), ((6,3),'#d4a5ff'), ((7,2),'#9f8fff'), ((8,1),'#7aa8ff')
-    ]
-    for (col,row),color in highlights:
-        parts.append(rect(x0 + col * step + 2, y0 + row * step + 2, 4, 4, color))
+        parts.append(rect(x0 + col * step, y0 + 8 * step, 8, 8, axis if col != 0 else axis_dark))
+    # small dark square at origin
+    parts.append(rect(x0 + 8, y0 + 7 * step, 8, 8, axis_dark))
+    # y = x style line
+    diag1 = [(2, 7), (3, 6), (4, 5), (5, 4), (6, 3), (7, 2), (8, 1)]
+    for col, row in diag1:
+        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, line1))
+    # second darker blue line / bar
+    line2_pts = [(1, 6), (2, 6), (3, 6), (4, 6)]
+    for col, row in line2_pts:
+        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, line2))
 
 
 def draw_beads_icon(parts):
-    x0, y0, step = 22, 29, 7
-    # pixelated curvy misbaha string, following the shown looped curve
-    rope = [
-        ((3,8),'#29d3f0'), ((2,8),'#2ad4f0'), ((2,9),'#2ad4f0'), ((1,9),'#2dd9f1'), ((1,10),'#2cd4ef'),
-        ((2,10),'#2ad0ec'), ((3,10),'#2ccded'), ((4,10),'#2fd8f0'), ((5,10),'#32def2'), ((6,9),'#31dcf2'),
-        ((7,9),'#2fd7f0'), ((8,8),'#2bd1ee'), ((8,7),'#27c8ea'), ((7,6),'#22bfe6'), ((6,6),'#1eb6e0'),
-        ((5,6),'#25c7ea'), ((4,6),'#2ad7f2'), ((3,5),'#2ddbf3'), ((2,5),'#2fdff4'), ((1,4),'#37d6f0'),
-        ((1,3),'#3bcceb'), ((2,2),'#43c0e7'), ((3,2),'#4db7e6'), ((4,2),'#54c8f5'), ((5,2),'#5ad7ff'),
-        ((6,2),'#64d8ff'), ((7,2),'#74cfff'), ((8,2),'#8cb0ff'), ((9,2),'#8b89ff'), ((10,1),'#736dff'),
-        ((11,1),'#5b62ff'), ((11,2),'#4f68ff'), ((10,3),'#5a79ff'), ((9,4),'#79d6ff'), ((9,5),'#93eaff'),
-        ((8,5),'#5dd9ff'), ((7,5),'#34d8f4'), ((7,4),'#32d6ef'), ((8,3),'#c9d24a')
-    ]
-    for (col,row),color in rope:
-        parts.append(rect(x0 + col * step, y0 + row * step, 7, 7, color))
-    beads = [
-        ((8,3),'#d6d84d'), ((9,2),'#8e85ff'), ((10,1),'#545cff'), ((11,1),'#3f53ff'), ((11,2),'#4c63ff'),
-        ((8,2),'#76beff'), ((7,2),'#68d9ff'), ((5,2),'#6ef2ff')
-    ]
-    for (col,row),color in beads:
-        parts.append(rect(x0 + col * step + 2, y0 + row * step + 2, 3, 3, color))
+    icon_x = 27
+    colors = {'1': BLUE, '2': '#205676'}
+    parts.append('<g shape-rendering="crispEdges">')
+    for row, line in enumerate(ICONS['beads']):
+        for col, value in enumerate(line):
+            if value != '0':
+                parts.append(rect(icon_x + col * 8, 35 + row * 8, 8, 8, colors.get(value, BLUE)))
+    parts.append('</g>')
 
 
 def room(data):
@@ -498,10 +479,10 @@ def room(data):
         parts.append(rect(sx, sy, 1, 1, color))
     parts.append(moon(28, 14))
     parts.append('<g class="meteor meteor-ltr" shape-rendering="crispEdges">')
-    parts += [rect(-3, 3, 1, 1, '#3b7595'), rect(-2, 2, 1, 1, '#579fc1'), rect(-1, 1, 1, 1, '#91d8f0'), rect(0, 0, 2, 1, '#d8f7ff'), rect(1, -1, 1, 1, '#ffffff')]
+    parts += [rect(-6, 2, 2, 1, '#2d5f78'), rect(-5, 2, 1, 1, '#417f9f'), rect(-4, 1, 2, 1, '#5fa8c7'), rect(-2, 1, 2, 1, '#91d8f0'), rect(0, 0, 2, 1, '#d8f7ff'), rect(2, 0, 1, 1, '#ffffff')]
     parts.append('</g>')
     parts.append('<g class="meteor meteor-rtl" shape-rendering="crispEdges">')
-    parts += [rect(4, 3, 1, 1, '#3b7595'), rect(3, 2, 1, 1, '#579fc1'), rect(2, 1, 1, 1, '#91d8f0'), rect(0, 0, 2, 1, '#d8f7ff'), rect(0, -1, 1, 1, '#ffffff')]
+    parts += [rect(6, 2, 2, 1, '#2d5f78'), rect(5, 2, 1, 1, '#417f9f'), rect(3, 1, 2, 1, '#5fa8c7'), rect(1, 1, 2, 1, '#91d8f0'), rect(-1, 0, 2, 1, '#d8f7ff'), rect(-2, 0, 1, 1, '#ffffff')]
     parts.append('</g>')
     flicker_css = []
     light_index = 0
@@ -520,7 +501,7 @@ def room(data):
                     off_end = min(99, off_start + rng.randrange(2, 7))
                     flicker_css.append(f'@keyframes {class_name}{{0%,{off_start - 1}%,{off_end + 1}%,100%{{opacity:1}}{off_start}%,{off_end}%{{opacity:{dim}}}}}.{class_name}{{animation:{class_name} {duration}s steps(1) -{delay}s infinite}}')
                     parts.append(rect(xx, yy, 1, 2, rng.choice(['#3e9ec8', '#7de2ff', '#254d6d']), f'class="{class_name}"'))
-    parts += [rect(8, 61, 204, 2, '#236080'), '</g>', rect(109, 9, 2, 54, '#142c43'), rect(5, 64, 210, 3, '#3b5970')]
+    parts += [rect(8, 61, 204, 2, '#236080'), '</g>', rect(5, 64, 210, 3, '#3b5970')]
     for y in range(94, 112, 6):
         parts.append(rect(0, y, 220, 1, '#192c40'))
     parts += [rect(19, 79, 182, 4, '#35516a'), rect(19, 83, 182, 2, '#183146'), rect(24, 85, 4, 16, '#243c51'), rect(193, 85, 4, 16, '#243c51'), rect(40, 45, 72, 31, '#385871'), rect(42, 47, 68, 27, '#06121f'), rect(72, 76, 8, 3, '#385871'), rect(65, 78, 22, 1, '#56788c')]
@@ -529,7 +510,7 @@ def room(data):
     values = [data.get('repos'), data.get('stars'), data.get('contributions')]
     for index, (label, value) in enumerate(zip(labels, values)):
         parts.append(pixel_text(45, 58 + index * 5, label, 2.55, MUTED))
-        parts.append(pixel_text(107, 58 + index * 5, 'N/A' if value is None else value, 2.8, ICE, 'text-anchor="end"'))
+        parts.append(pixel_text(107, 58 + index * 5, 0 if value is None else value, 2.8, ICE, 'text-anchor="end"'))
     parts.append(rect(45, 70, 3, 1, ICE, 'class="blink"'))
     parts += [rect(38, 80, 65, 1, '#7590a4'), rect(116, 77, 7, 2, '#5d7c95'), rect(129, 47, 66, 32, '#51738b'), rect(131, 49, 62, 28, '#123c58'), rect(131, 74, 62, 3, '#24465c')]
     parts.append('<g clip-path="url(#tank)">')
@@ -558,32 +539,34 @@ def room(data):
             parts.append(rect(132 + column, top, 1, 1, '#92917a'))
 
     fish_colors = ['#7feaff', '#f4bd79', '#82a9f5']
-    fish_starts = [(143, 57), (162, 63), (174, 55)]
+    fish_starts = [(142, 56), (159, 61), (175, 66)]
+    lane_ranges = [(54, 58), (59, 63), (64, 68)]
     fish_css = []
-    for index, ((start_x, start_y), color) in enumerate(zip(fish_starts, fish_colors)):
+    for index, ((start_x, start_y), color, lane) in enumerate(zip(fish_starts, fish_colors, lane_ranges)):
         route = [(start_x, start_y)]
-        for _ in range(4):
+        for _ in range(5):
             previous = route[-1]
-            for attempt in range(40):
-                target_x = max(135, min(180, round(fish_rng.gauss(160, 8.5))))
-                target_y = max(53, min(66, round(fish_rng.gauss(60.5, 3.0))))
-                if abs(target_x - previous[0]) + abs(target_y - previous[1]) >= 8:
-                    break
+            target_x = max(138, min(184, round(fish_rng.gauss(160, 9))))
+            if abs(target_x - previous[0]) < 8:
+                target_x = previous[0] + (10 if target_x <= previous[0] else -10)
+            target_x = max(138, min(184, target_x))
+            target_y = fish_rng.randint(lane[0], lane[1])
             route.append((target_x, target_y))
         route.append((start_x, start_y))
         waits = [fish_rng.randint(5, 12) for _ in range(len(route) - 1)]
-        travel = 3
-        total = sum(waits) + travel * len(waits)
-        elapsed = 0
-        motion_frames = [(0, 0, 0)]
-        directions = [(0, 'right' if route[1][0] >= route[0][0] else 'left')]
+        travels = [3 + fish_rng.random() * 1.2 for _ in range(len(route) - 1)]
+        total = sum(waits) + sum(travels)
+        elapsed = 0.0
+        motion_frames = [(0.0, 0, 0)]
+        facing_frames = [(0.0, 'right' if route[1][0] >= route[0][0] else 'left')]
         for segment, (current, target) in enumerate(zip(route, route[1:])):
+            facing = 'right' if target[0] >= current[0] else 'left'
+            facing_frames.append((elapsed, facing))
             elapsed += waits[segment]
             motion_frames.append((elapsed, current[0] - start_x, current[1] - start_y))
-            elapsed += travel
+            elapsed += travels[segment]
             motion_frames.append((elapsed, target[0] - start_x, target[1] - start_y))
-            next_target = route[segment + 2] if segment + 2 < len(route) else route[1]
-            directions.append((elapsed, 'right' if next_target[0] >= target[0] else 'left'))
+            facing_frames.append((elapsed, facing))
         route_name = f'fish-route-{index}'
         left_name = f'fish-left-{index}'
         right_name = f'fish-right-{index}'
@@ -591,22 +574,21 @@ def room(data):
         for moment, dx, dy in motion_frames:
             percent = moment / total * 100
             route_rules.append(f'{percent:.4f}%{{transform:translate({dx}px,{dy}px)}}')
-        fish_css.append(f'@keyframes {route_name}{{{"".join(route_rules)}}}.fish-{index}{{animation:{route_name} {total}s linear infinite}}')
+        phase = fish_rng.random() * total
+        fish_css.append(f'@keyframes {route_name}{{{"".join(route_rules)}}}.fish-{index}{{animation:{route_name} {total:.3f}s linear -{phase:.3f}s infinite}}')
         left_rules = []
         right_rules = []
-        for moment, direction in directions:
+        for moment, direction in facing_frames:
             percent = moment / total * 100
-            left_opacity = 1 if direction == 'left' else 0
-            right_opacity = 1 if direction == 'right' else 0
-            left_rules.append(f'{percent:.4f}%{{opacity:{left_opacity};animation-timing-function:steps(1,end)}}')
-            right_rules.append(f'{percent:.4f}%{{opacity:{right_opacity};animation-timing-function:steps(1,end)}}')
-        fish_css.append(f'@keyframes {left_name}{{{"".join(left_rules)}}}.fish-left-{index}{{animation:{left_name} {total}s steps(1,end) infinite}}')
-        fish_css.append(f'@keyframes {right_name}{{{"".join(right_rules)}}}.fish-right-{index}{{animation:{right_name} {total}s steps(1,end) infinite}}')
+            left_rules.append(f'{percent:.4f}%{{opacity:{1 if direction == "left" else 0}}}')
+            right_rules.append(f'{percent:.4f}%{{opacity:{1 if direction == "right" else 0}}}')
+        fish_css.append(f'@keyframes {left_name}{{{"".join(left_rules)}}}.fish-left-{index}{{animation:{left_name} {total:.3f}s steps(1,end) -{phase:.3f}s infinite}}')
+        fish_css.append(f'@keyframes {right_name}{{{"".join(right_rules)}}}.fish-right-{index}{{animation:{right_name} {total:.3f}s steps(1,end) -{phase:.3f}s infinite}}')
         parts.append(f'<g class="fish fish-{index}">')
-        parts.append(f'<g class="fish-left-{index}" style="opacity:{1 if directions[0][1] == "left" else 0}" shape-rendering="crispEdges">')
+        parts.append(f'<g class="fish-left-{index}" shape-rendering="crispEdges">')
         parts += [rect(start_x + 7, start_y + 1, 2, 3, color), rect(start_x + 3, start_y + 1, 4, 3, color), rect(start_x, start_y, 3, 5, color), rect(start_x + 1, start_y + 1, 1, 1, '#0b203d')]
         parts.append('</g>')
-        parts.append(f'<g class="fish-right-{index}" style="opacity:{1 if directions[0][1] == "right" else 0}" shape-rendering="crispEdges">')
+        parts.append(f'<g class="fish-right-{index}" shape-rendering="crispEdges">')
         parts += [rect(start_x, start_y + 1, 2, 3, color), rect(start_x + 2, start_y + 1, 4, 3, color), rect(start_x + 6, start_y, 3, 5, color), rect(start_x + 7, start_y + 1, 1, 1, '#0b203d')]
         parts.append('</g></g>')
 
@@ -614,9 +596,9 @@ def room(data):
         parts.append(rect(137 + index * 8, y, 1, 1, '#9fe7f4', f'class="bubble" style="animation-delay:-{index * .6}s"'))
     parts.append('</g>')
     parts += [rect(131, 49, 62, 1, '#78c6e2'), rect(131, 49, 1, 28, '#78c6e2'), rect(129, 77, 66, 2, '#5c8095')]
-    parts += [rect(7, 91, 206, 15, '#081321'), pixel_text(12, 101, '3ZMI / AFTER HOURS', 5, ICE), pixel_text(208, 101, 'CODE // CREATE', 3.5, MUTED, 'text-anchor="end"')]
+    parts += [rect(7, 91, 206, 15, '#081321'), pixel_text(12, 101, '3ZMI AQUARIUM', 5, ICE), pixel_text(208, 101, 'CODE // EFFICIENT', 3.5, MUTED, 'text-anchor="end"')]
     definitions = '<defs><clipPath id="window"><rect x="8" y="9" width="204" height="54"/></clipPath><clipPath id="tank"><rect x="132" y="50" width="60" height="24"/></clipPath></defs>'
-    meteor_css = '@keyframes meteor-ltr{0%{transform:translate(-8px,31px);opacity:1}1.25%{transform:translate(48px,16px);opacity:1}2.5%{transform:translate(105px,10px);opacity:1}3.75%{transform:translate(164px,17px);opacity:1}5%{transform:translate(230px,32px);opacity:1}5.2%{opacity:0}100%{transform:translate(230px,32px);opacity:0}}@keyframes meteor-rtl{0%{transform:translate(230px,32px);opacity:1}1.25%{transform:translate(164px,17px);opacity:1}2.5%{transform:translate(105px,10px);opacity:1}3.75%{transform:translate(48px,16px);opacity:1}5%{transform:translate(-8px,31px);opacity:1}5.2%{opacity:0}100%{transform:translate(-8px,31px);opacity:0}}.meteor{opacity:0}.meteor-ltr{animation:meteor-ltr 60s linear 3s infinite}.meteor-rtl{animation:meteor-rtl 60s linear 33s infinite}'
+    meteor_css = '@keyframes meteor-ltr{0%{transform:translate(-8px,33px);opacity:0}0.2%{opacity:1}1.1%{transform:translate(38px,21px);opacity:1}2.2%{transform:translate(92px,14px);opacity:1}3.3%{transform:translate(152px,18px);opacity:1}4.6%{transform:translate(228px,34px);opacity:1}4.8%,100%{transform:translate(228px,34px);opacity:0}}@keyframes meteor-rtl{0%{transform:translate(228px,34px);opacity:0}0.2%{opacity:1}1.1%{transform:translate(176px,20px);opacity:1}2.2%{transform:translate(122px,13px);opacity:1}3.3%{transform:translate(62px,17px);opacity:1}4.6%{transform:translate(-8px,32px);opacity:1}4.8%,100%{transform:translate(-8px,32px);opacity:0}}.meteor{opacity:0}.meteor-ltr{animation:meteor-ltr 30s linear 3s infinite}.meteor-rtl{animation:meteor-rtl 30s linear 18s infinite}'
     css = '.blink{animation:cursor 1s steps(1) infinite}.bubble{animation:bubble 4s linear infinite}@keyframes cursor{50%{opacity:0}}@keyframes bubble{to{transform:translateY(-20px);opacity:0}}' + meteor_css + ''.join(flicker_css) + ''.join(fish_css)
     body = definitions + '<g transform="scale(4)" shape-rendering="crispEdges">' + ''.join(parts) + '</g>'
     write('room.svg', svg(880, 448, 'Midnight pixel-art workstation, city skyline and aquarium with moving fish and shooting stars', body, css))
@@ -640,9 +622,9 @@ def card(name, description, icon, repo):
     for index, line in enumerate(textwrap.wrap(description, width=39)[:4]):
         parts.append(pixel_text(128, 59 + index * 15, line, 8.5, MUTED))
     stars = repo.get('stargazers_count') if repo else None
-    language = (repo.get('language') or 'UNKNOWN') if repo is not None else 'N/A'
+    language = (repo.get('language') or 'PYTHON') if repo is not None else 'PYTHON'
     parts.append(pixel_text(18, 148, language[:20], 8.5, ICE))
-    parts.append(pixel_text(412, 148, 'STARS: ' + ('N/A' if stars is None else str(stars)), 8.5, ICE, 'text-anchor="end"'))
+    parts.append(pixel_text(412, 148, 'STARS: ' + str(0 if stars is None else stars), 8.5, ICE, 'text-anchor="end"'))
     write(name + '.svg', svg(430, 168, name + ' project card with live repository stars', ''.join(parts)))
 
 
@@ -672,20 +654,20 @@ def stats(data):
     for index, (key, label) in enumerate(metrics):
         x = 24 + index * 220
         value = data.get(key)
-        shown = 'N/A' if value is None else value
+        shown = 0 if value is None else value
         parts.append(pixel_text(x, 48, shown, 23, ICE))
         parts.append(pixel_text(x, 76, label, 7.5, MUTED))
         if index:
             parts.append(rect(x - 16, 24, 1, 60, EDGE))
-    parts.append(pixel_text(24, 109, f'PUBLIC REPOSITORIES: {data.get("repos", "N/A")} / FOLLOWERS: {data.get("followers", "N/A")}', 8, MUTED))
-    parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'WAITING FOR FIRST RUN'), 7.5, MUTED, 'text-anchor="end"'))
+    parts.append(pixel_text(24, 109, f'PUBLIC REPOSITORIES: {data.get("repos", 0)} / FOLLOWERS: {data.get("followers", 0)}', 8, MUTED))
+    parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'READY'), 7.5, MUTED, 'text-anchor="end"'))
     write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
 
 def activity(data):
     parts = [rect(.5, .5, 879, 218, PANEL, f'rx="10" stroke="{EDGE}"'), pixel_text(24, 28, '> ACTIVITY / LAST 365 DAYS', 10, ICE)]
     if not data.get('days'):
-        parts.append(pixel_text(24, 92, 'CONTRIBUTION CALENDAR: N/A', 12, ICE))
+        parts.append(pixel_text(24, 92, 'CONTRIBUTION CALENDAR: 0', 12, ICE))
         parts.append(pixel_text(24, 119, 'THE PROFILE STATS STILL REFRESH; CALENDAR DATA WILL RETRY NEXT RUN.', 8.5, MUTED))
     else:
         end = date.fromisoformat(data['date'])
@@ -716,7 +698,6 @@ def update_readme_cache_bust(version):
 def render(data):
     room(data)
     intro()
-    github_button()
     projects_heading()
     stats(data)
     activity(data)
@@ -740,12 +721,12 @@ def seed_data():
         'repos': 12,
         'followers': 17,
         'stars': sum(project_stars.values()),
-        'commits': None,
-        'prs': None,
-        'contributions': None,
-        'total': None,
-        'current': None,
-        'best': None,
+        'commits': 0,
+        'prs': 0,
+        'contributions': 0,
+        'total': 0,
+        'current': 0,
+        'best': 0,
         'days': {},
         'levels': {},
         'projects': projects,
