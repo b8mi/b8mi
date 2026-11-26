@@ -86,7 +86,7 @@ FONT = {
 }
 
 ICONS = {
-    'pdf': ['001111100', '001222100', '001222110', '001222221', '001212221', '001222221', '001211121', '001222221', '001111111'],
+    'pdf': ['001111100', '001222100', '001222111', '001222221', '001212221', '001222221', '001211121', '001222221', '001111111'],
     'beads': ['000111000', '001000100', '010000010', '100000001', '100000001', '100000001', '010000010', '001010100', '000111000'],
     'media': ['111111111', '122222221', '120222221', '120022221', '120002221', '120022221', '120222221', '122222221', '111111111'],
     'math': ['100000001', '100000010', '100000100', '100001000', '111111111', '100100000', '101000000', '110000000', '111111111'],
@@ -363,7 +363,7 @@ def fetch():
         except Exception:
             prs = None
 
-    featured_stars = sum((repo or {}).get('stargazers_count', 0) for repo in project_map.values())
+    featured_stars = None if any(repo is None for repo in project_map.values()) else sum(repo.get('stargazers_count', 0) for repo in project_map.values())
     return {
         'name': profile.get('name') or USER,
         'followers': profile.get('followers', 0),
@@ -430,25 +430,25 @@ def line_points(start, end):
 
 def draw_math_icon(parts):
     x0, y0, step = 27, 35, 8
-    axis = '#6d5cff'
-    axis_dark = '#4a3db2'
-    line1 = '#76e6ff'
-    line2 = '#4fb3ff'
-    # old-style axes
+    axis = '#6250c8'
+    axis_shadow = '#49399f'
+    y_equals_3 = '#4f9fe0'
+    y_equals_x = '#76e6ff'
+
+    # Dark-purple coordinate axes.
     for row in range(9):
-        parts.append(rect(x0, y0 + row * step, 8, 8, axis if row != 8 else axis_dark))
+        parts.append(rect(x0, y0 + row * step, 8, 8, axis_shadow if row == 8 else axis))
     for col in range(9):
-        parts.append(rect(x0 + col * step, y0 + 8 * step, 8, 8, axis if col != 0 else axis_dark))
-    # small dark square at origin
-    parts.append(rect(x0 + 8, y0 + 7 * step, 8, 8, axis_dark))
-    # y = x style line
-    diag1 = [(2, 7), (3, 6), (4, 5), (5, 4), (6, 3), (7, 2), (8, 1)]
-    for col, row in diag1:
-        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, line1))
-    # second darker blue line / bar
-    line2_pts = [(1, 6), (2, 6), (3, 6), (4, 6)]
-    for col, row in line2_pts:
-        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, line2))
+        parts.append(rect(x0 + col * step, y0 + 8 * step, 8, 8, axis_shadow))
+
+    # y = 3: a horizontal line across the graph.
+    for col in range(1, 9):
+        parts.append(rect(x0 + col * step, y0 + 5 * step, 8, 8, y_equals_3))
+
+    # y = x: a rising, stepped pixel line.
+    diagonal = [(1, 7), (2, 6), (3, 5), (4, 4), (5, 3), (6, 2), (7, 1), (8, 0)]
+    for col, row in diagonal:
+        parts.append(rect(x0 + col * step, y0 + row * step, 8, 8, y_equals_x))
 
 
 def draw_beads_icon(parts):
@@ -510,7 +510,7 @@ def room(data):
     values = [data.get('repos'), data.get('stars'), data.get('contributions')]
     for index, (label, value) in enumerate(zip(labels, values)):
         parts.append(pixel_text(45, 58 + index * 5, label, 2.55, MUTED))
-        parts.append(pixel_text(107, 58 + index * 5, 0 if value is None else value, 2.8, ICE, 'text-anchor="end"'))
+        parts.append(pixel_text(107, 58 + index * 5, '--' if value is None else value, 2.8, ICE, 'text-anchor="end"'))
     parts.append(rect(45, 70, 3, 1, ICE, 'class="blink"'))
     parts += [rect(38, 80, 65, 1, '#7590a4'), rect(116, 77, 7, 2, '#5d7c95'), rect(129, 47, 66, 32, '#51738b'), rect(131, 49, 62, 28, '#123c58'), rect(131, 74, 62, 3, '#24465c')]
     parts.append('<g clip-path="url(#tank)">')
@@ -624,7 +624,7 @@ def card(name, description, icon, repo):
     stars = repo.get('stargazers_count') if repo else None
     language = (repo.get('language') or 'PYTHON') if repo is not None else 'PYTHON'
     parts.append(pixel_text(18, 148, language[:20], 8.5, ICE))
-    parts.append(pixel_text(412, 148, 'STARS: ' + str(0 if stars is None else stars), 8.5, ICE, 'text-anchor="end"'))
+    parts.append(pixel_text(412, 148, 'STARS: ' + ('--' if stars is None else str(stars)), 8.5, ICE, 'text-anchor="end"'))
     write(name + '.svg', svg(430, 168, name + ' project card with live repository stars', ''.join(parts)))
 
 
@@ -632,10 +632,6 @@ def intro():
     parts = [pixel_text(440, 28, 'I BUILD SOFTWARE, GAMES AND TOOLS THAT MAKE THINGS A LITTLE EASIER.', 10, WHITE, 'text-anchor="middle"'), pixel_text(440, 49, 'STAR A REPOSITORY IF YOU FIND IT USEFUL.', 9, ICE, 'text-anchor="middle"')]
     write('intro.svg', svg(880, 62, 'Pixel-art introduction', ''.join(parts)))
 
-
-def github_button():
-    parts = [rect(365, 2, 150, 30, '#0d263c', 'stroke="#28739a"'), rect(369, 6, 142, 22, '#102f49', 'stroke="#1e5778"'), pixel_text(440, 22, 'OPEN GITHUB', 9, ICE, 'text-anchor="middle"')]
-    write('github-button.svg', svg(880, 36, 'Open GitHub profile', ''.join(parts)))
 
 
 def projects_heading():
@@ -654,12 +650,12 @@ def stats(data):
     for index, (key, label) in enumerate(metrics):
         x = 24 + index * 220
         value = data.get(key)
-        shown = 0 if value is None else value
+        shown = '--' if value is None else value
         parts.append(pixel_text(x, 48, shown, 23, ICE))
         parts.append(pixel_text(x, 76, label, 7.5, MUTED))
         if index:
             parts.append(rect(x - 16, 24, 1, 60, EDGE))
-    parts.append(pixel_text(24, 109, f'PUBLIC REPOSITORIES: {data.get("repos", 0)} / FOLLOWERS: {data.get("followers", 0)}', 8, MUTED))
+    parts.append(pixel_text(24, 109, f'PUBLIC REPOSITORIES: {data.get("repos") if data.get("repos") is not None else "--"} / FOLLOWERS: {data.get("followers") if data.get("followers") is not None else "--"}', 8, MUTED))
     parts.append(pixel_text(855, 109, 'UPDATED ' + data.get('synced', 'READY'), 7.5, MUTED, 'text-anchor="end"'))
     write('stats.svg', svg(880, 130, 'Live GitHub profile statistics', ''.join(parts)))
 
@@ -667,8 +663,8 @@ def stats(data):
 def activity(data):
     parts = [rect(.5, .5, 879, 218, PANEL, f'rx="10" stroke="{EDGE}"'), pixel_text(24, 28, '> ACTIVITY / LAST 365 DAYS', 10, ICE)]
     if not data.get('days'):
-        parts.append(pixel_text(24, 92, 'CONTRIBUTION CALENDAR: 0', 12, ICE))
-        parts.append(pixel_text(24, 119, 'THE PROFILE STATS STILL REFRESH; CALENDAR DATA WILL RETRY NEXT RUN.', 8.5, MUTED))
+        parts.append(pixel_text(24, 92, 'CONTRIBUTIONS: SYNC PENDING', 12, ICE))
+        parts.append(pixel_text(24, 119, 'RUN THE UPDATE WORKFLOW TO LOAD YOUR LIVE CONTRIBUTION HISTORY.', 8.5, MUTED))
     else:
         end = date.fromisoformat(data['date'])
         first = end - timedelta(days=364)
@@ -707,26 +703,20 @@ def render(data):
 
 
 def seed_data():
-    project_stars = {
-        'Python-PDF-Toolkits': 23,
-        'MISBA7ATY': 8,
-        'Media_Converter': 23,
-        'MathsTools': 0,
-    }
     projects = {
-        name: {'name': name, 'language': 'Python', 'stargazers_count': stars}
-        for name, stars in project_stars.items()
+        name: {'name': name, 'language': 'Python', 'stargazers_count': None}
+        for name in PROJECTS
     }
     return {
-        'repos': 12,
-        'followers': 17,
-        'stars': sum(project_stars.values()),
-        'commits': 0,
-        'prs': 0,
-        'contributions': 0,
-        'total': 0,
-        'current': 0,
-        'best': 0,
+        'repos': None,
+        'followers': None,
+        'stars': None,
+        'commits': None,
+        'prs': None,
+        'contributions': None,
+        'total': None,
+        'current': None,
+        'best': None,
         'days': {},
         'levels': {},
         'projects': projects,
